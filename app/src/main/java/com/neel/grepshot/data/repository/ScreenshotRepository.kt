@@ -3,26 +3,23 @@ package com.neel.grepshot.data.repository
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import androidx.compose.runtime.mutableStateOf
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.neel.grepshot.data.database.AppDatabase
 import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.model.ScreenshotWithText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 
-class ScreenshotRepository {
-    // Map URI string to ScreenshotWithText object
-    private val screenshotTextMap = mutableStateOf<Map<String, ScreenshotWithText>>(emptyMap())
+class ScreenshotRepository(context: Context) {
+    private val screenshotDao = AppDatabase.getDatabase(context).screenshotDao()
     
     // Add a new processed screenshot
-    fun addScreenshotWithText(uri: Uri, name: String, text: String) {
-        val uriString = uri.toString()
-        val updatedMap = screenshotTextMap.value.toMutableMap()
-        updatedMap[uriString] = ScreenshotWithText(uri, name, text)
-        screenshotTextMap.value = updatedMap
+    suspend fun addScreenshotWithText(uri: Uri, name: String, text: String) {
+        val screenshot = ScreenshotWithText(uri, name, text)
+        screenshotDao.insertScreenshot(screenshot)
         Log.d("ScreenshotRepo", "Added text for $name: ${text.take(50)}...")
     }
     
@@ -63,26 +60,23 @@ class ScreenshotRepository {
     }
     
     // Search for screenshots containing the query text
-    fun searchScreenshots(query: String): List<ScreenshotWithText> {
+    suspend fun searchScreenshots(query: String): List<ScreenshotWithText> {
         if (query.isEmpty()) return emptyList()
-        
-        return screenshotTextMap.value.values.filter {
-            it.extractedText.contains(query, ignoreCase = true)
-        }
+        return screenshotDao.searchScreenshots(query)
     }
     
     // Get all processed screenshots
-    fun getAllScreenshots(): List<ScreenshotWithText> {
-        return screenshotTextMap.value.values.toList()
+    suspend fun getAllScreenshots(): List<ScreenshotWithText> {
+        return screenshotDao.getAllScreenshots()
     }
     
     // Check if a screenshot has been processed
-    fun isScreenshotProcessed(uri: Uri): Boolean {
-        return screenshotTextMap.value.containsKey(uri.toString())
+    suspend fun isScreenshotProcessed(uri: Uri): Boolean {
+        return screenshotDao.isScreenshotProcessed(uri.toString())
     }
     
     // Get a specific screenshot
-    fun getScreenshot(uri: Uri): ScreenshotWithText? {
-        return screenshotTextMap.value[uri.toString()]
+    suspend fun getScreenshot(uri: Uri): ScreenshotWithText? {
+        return screenshotDao.getScreenshot(uri.toString())
     }
 }

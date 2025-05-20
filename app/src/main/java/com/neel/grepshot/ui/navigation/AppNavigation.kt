@@ -28,7 +28,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
     var screenshots by remember { mutableStateOf<List<ScreenshotItem>>(emptyList()) }
     
     // Create shared repository instance
-    val screenshotRepository = remember { ScreenshotRepository() }
+    val screenshotRepository = remember { ScreenshotRepository(context) }
     
     NavHost(
         navController = navController, 

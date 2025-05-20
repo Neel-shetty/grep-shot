@@ -76,19 +76,21 @@ fun HomeScreen(
     var processedCount by remember { mutableStateOf(0) }
     val totalScreenshots = screenshots.size
     
-    // Update processed count whenever the repository changes
-    LaunchedEffect(repository.getAllScreenshots()) {
-        processedCount = repository.getAllScreenshots().size
-    }
-
-    // Process all screenshots once they're loaded
+    // Update processed count whenever screenshots change
     LaunchedEffect(screenshots) {
-        if (screenshots.isNotEmpty()) {
-            // Add a log to track when batch processing starts
-            Log.d("ScreenshotsApp", "Starting batch processing of ${screenshots.size} screenshots")
+        try {
+            val processedScreenshots = repository.getAllScreenshots()
+            processedCount = processedScreenshots.size
             
-            // Process all screenshots in the background
-            repository.processScreenshots(context, screenshots)
+            if (screenshots.isNotEmpty()) {
+                // Add a log to track when batch processing starts
+                Log.d("ScreenshotsApp", "Starting batch processing of ${screenshots.size} screenshots")
+                
+                // Process all screenshots in the background
+                repository.processScreenshots(context, screenshots)
+            }
+        } catch (e: Exception) {
+            Log.e("ScreenshotsApp", "Error processing screenshots", e)
         }
     }
 

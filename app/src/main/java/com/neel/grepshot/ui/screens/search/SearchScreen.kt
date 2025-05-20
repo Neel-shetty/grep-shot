@@ -23,9 +23,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.neel.grepshot.data.model.ScreenshotWithText
 import com.neel.grepshot.data.repository.ScreenshotRepository
+import kotlinx.coroutines.launch
 
 @ExperimentalMaterial3Api
 @Composable
@@ -45,6 +48,24 @@ fun SearchScreen(
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
+    var processedCount by remember { mutableStateOf(0) }
+    
+    // Create a coroutine scope that follows the lifecycle of the composable
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Get processed count once when screen loads
+    LaunchedEffect(Unit) {
+        processedCount = repository.getAllScreenshots().size
+    }
+    
+    // Search when query changes
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isNotEmpty()) {
+            searchResults = repository.searchScreenshots(searchQuery)
+        } else {
+            searchResults = emptyList()
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -72,11 +93,6 @@ fun SearchScreen(
                 value = searchQuery,
                 onValueChange = { 
                     searchQuery = it
-                    searchResults = if (it.isNotEmpty()) {
-                        repository.searchScreenshots(it)
-                    } else {
-                        emptyList()
-                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = { Text("Search for text in screenshots") },
@@ -92,13 +108,14 @@ fun SearchScreen(
                 ),
                 keyboardActions = KeyboardActions(
                     onSearch = {
-                        searchResults = repository.searchScreenshots(searchQuery)
+                        coroutineScope.launch {
+                            searchResults = repository.searchScreenshots(searchQuery)
+                        }
                     }
                 )
             )
             
             // Show processing status
-            val processedCount = repository.getAllScreenshots().size
             Text(
                 text = "$processedCount screenshots processed for text",
                 modifier = Modifier
