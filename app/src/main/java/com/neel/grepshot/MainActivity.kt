@@ -111,6 +111,42 @@ class ScreenshotRepository {
         Log.d("ScreenshotRepo", "Added text for $name: ${text.take(50)}...")
     }
     
+    // Process multiple screenshots at once
+    suspend fun processScreenshots(context: android.content.Context, screenshots: List<ScreenshotItem>) {
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        
+        screenshots.forEach { screenshot ->
+            if (!isScreenshotProcessed(screenshot.uri)) {
+                try {
+                    val inputImage = InputImage.fromFilePath(context, screenshot.uri)
+                    
+                    val text = withContext(Dispatchers.IO) {
+                        suspendCancellableCoroutine<String> { continuation ->
+                            recognizer.process(inputImage)
+                                .addOnSuccessListener { visionText ->
+                                    if (continuation.isActive) {
+                                        continuation.resume(visionText.text) {}
+                                    }
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("TextRecognition", "Error processing batch image", e)
+                                    if (continuation.isActive) {
+                                        continuation.resume("") {}
+                                    }
+                                }
+                        }
+                    }
+                    
+                    addScreenshotWithText(screenshot.uri, screenshot.name, text)
+                    Log.d("ScreenshotRepo", "Batch processed: ${screenshot.name}")
+                } catch (e: Exception) {
+                    Log.e("TextRecognition", "Error creating InputImage for ${screenshot.name}", e)
+                    addScreenshotWithText(screenshot.uri, screenshot.name, "")
+                }
+            }
+        }
+    }
+    
     // Search for screenshots containing the query text
     fun searchScreenshots(query: String): List<ScreenshotWithText> {
         if (query.isEmpty()) return emptyList()
@@ -226,6 +262,17 @@ fun ScreenshotsApp(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasPermission = isGranted
+    }
+
+    // Process all screenshots once they're loaded
+    LaunchedEffect(screenshots) {
+        if (screenshots.isNotEmpty()) {
+            // Add a log to track when batch processing starts
+            Log.d("ScreenshotsApp", "Starting batch processing of ${screenshots.size} screenshots")
+            
+            // Process all screenshots in the background
+            repository.processScreenshots(context, screenshots)
+        }
     }
 
     LaunchedEffect(hasPermission) {
@@ -368,8 +415,6 @@ fun FullScreenImageScreen(
     onNavigateBack: () -> Unit,
     repository: ScreenshotRepository
 ) {
-    val context = LocalContext.current
-    var isProcessing by remember { mutableStateOf(false) }
     var extractedText by remember { mutableStateOf<String?>(null) }
     
     // Handle system back button
@@ -377,49 +422,9 @@ fun FullScreenImageScreen(
         onNavigateBack()
     }
     
-    // Check if already processed or process image with ML Kit
+    // Get pre-processed text or show status if still in processing
     LaunchedEffect(screenshotItem.uri) {
-        if (!repository.isScreenshotProcessed(screenshotItem.uri)) {
-            isProcessing = true
-            try {
-                val inputImage = InputImage.fromFilePath(context, screenshotItem.uri)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-                
-                val result = withContext(Dispatchers.IO) {
-                    suspendCancellableCoroutine<String> { continuation ->
-                        recognizer.process(inputImage)
-                            .addOnSuccessListener { visionText ->
-                                val text = visionText.text
-                                if (continuation.isActive) {
-                                    continuation.resume(text) { 
-                                        // Handle cancellation if needed
-                                    }
-                                }
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("TextRecognition", "Error processing image", e)
-                                if (continuation.isActive) {
-                                    continuation.resume("") {
-                                        // Handle cancellation if needed
-                                    }
-                                }
-                            }
-                    }
-                }
-                
-                extractedText = result
-                repository.addScreenshotWithText(screenshotItem.uri, screenshotItem.name, result)
-                
-            } catch (e: Exception) {
-                Log.e("TextRecognition", "Error creating InputImage", e)
-                extractedText = ""
-                repository.addScreenshotWithText(screenshotItem.uri, screenshotItem.name, "")
-            } finally {
-                isProcessing = false
-            }
-        } else {
-            extractedText = repository.getScreenshot(screenshotItem.uri)?.extractedText
-        }
+        extractedText = repository.getScreenshot(screenshotItem.uri)?.extractedText
     }
     
     Scaffold { paddingValues ->
@@ -464,7 +469,7 @@ fun FullScreenImageScreen(
                 )
                 
                 // Show status about text recognition
-                if (isProcessing) {
+                if (extractedText == null) {
                     Text(
                         text = "Processing text...",
                         color = Color.White,
@@ -473,7 +478,7 @@ fun FullScreenImageScreen(
                             .fillMaxWidth()
                             .padding(top = 4.dp)
                     )
-                } else if (extractedText != null && extractedText!!.isNotEmpty()) {
+                } else if (extractedText!!.isNotEmpty()) {
                     Text(
                         text = "Text detected and saved",
                         color = Color.Green,
@@ -482,7 +487,7 @@ fun FullScreenImageScreen(
                             .fillMaxWidth()
                             .padding(top = 4.dp)
                     )
-                } else if (extractedText != null) {
+                } else {
                     Text(
                         text = "No text detected in image",
                         color = Color.LightGray,
