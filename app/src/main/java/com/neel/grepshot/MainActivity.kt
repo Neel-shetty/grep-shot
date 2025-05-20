@@ -375,8 +375,8 @@ fun ScreenshotsApp(
                         modifier = Modifier.padding(16.dp)
                     )
                 } else {
-                    // Add progress indicator section
-                    if (totalScreenshots > 0) {
+                    // Only show progress indicator if processing is not complete
+                    if (totalScreenshots > 0 && processedCount < totalScreenshots) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -393,9 +393,7 @@ fun ScreenshotsApp(
                             }
                             
                             LinearProgressIndicator(
-                                progress = if (totalScreenshots > 0) {
-                                    processedCount.toFloat() / totalScreenshots 
-                                } else 0f,
+                                progress = processedCount.toFloat() / totalScreenshots,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 4.dp)
