@@ -82,6 +82,7 @@ fun HomeScreen(
     // Track processing progress
     var processedCount by remember { mutableStateOf(0) }
     val totalScreenshots = screenshots.size
+    var processingNewScreenshots by remember { mutableStateOf(false) }
     
     // Update processed count periodically for the visible screenshots
     LaunchedEffect(screenshots) {
@@ -127,6 +128,25 @@ fun HomeScreen(
                     if (screenShotsList.size >= 20) break
                 }
                 onScreenshotsLoaded(screenShotsList)
+                
+                // Process only new screenshots with database-level filtering
+                coroutineScope.launch {
+                    processingNewScreenshots = true
+                    
+                    // Use the new method that handles database-level filtering
+                    val unprocessedScreenshots = repository.findUnprocessedScreenshots(screenShotsList)
+                    
+                    if (unprocessedScreenshots.isNotEmpty()) {
+                        repository.processScreenshots(context, unprocessedScreenshots)
+                        Toast.makeText(
+                            context,
+                            "Processing ${unprocessedScreenshots.size} new screenshots",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                    
+                    processingNewScreenshots = false
+                }
             }
         }
     }

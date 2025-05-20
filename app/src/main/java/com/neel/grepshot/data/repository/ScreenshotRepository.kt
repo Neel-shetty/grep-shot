@@ -100,4 +100,21 @@ class ScreenshotRepository(context: Context) {
         }
         return count
     }
+    
+    // Find unprocessed screenshots from a list
+    suspend fun findUnprocessedScreenshots(screenshots: List<ScreenshotItem>): List<ScreenshotItem> {
+        val processedUris = screenshotDao.getAllProcessedUris()
+        return screenshots.filter { screenshot -> 
+            !processedUris.contains(screenshot.uri.toString()) 
+        }
+    }
+    
+    // Process only unprocessed screenshots
+    suspend fun processNewScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
+        val unprocessedScreenshots = findUnprocessedScreenshots(screenshots)
+        if (unprocessedScreenshots.isNotEmpty()) {
+            processScreenshots(context, unprocessedScreenshots)
+            Log.d("ScreenshotRepo", "Processed ${unprocessedScreenshots.size} new screenshots")
+        }
+    }
 }

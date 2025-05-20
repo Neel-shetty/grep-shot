@@ -33,4 +33,7 @@ interface ScreenshotDao {
     
     @Query("DELETE FROM screenshots")
     suspend fun clearAllScreenshots()
+    
+    @Query("SELECT uri FROM screenshots")
+    suspend fun getAllProcessedUris(): List<String>
 }
