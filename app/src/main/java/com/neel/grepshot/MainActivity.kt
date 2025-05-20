@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -54,7 +55,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import coil.compose.rememberAsyncImagePainter
+import coil3.compose.AsyncImage
 import com.neel.grepshot.ui.theme.GrepShotTheme
 
 class MainActivity : ComponentActivity() {
@@ -250,12 +251,14 @@ fun ScreenshotCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .height(400.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = screenshot.name,
-                textAlign = TextAlign.Center
+            AsyncImage(
+                model = screenshot.uri,
+                contentDescription = screenshot.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
             )
         }
     }
@@ -278,13 +281,8 @@ fun FullScreenImageScreen(
                 .background(Color.Black)
                 .padding(paddingValues)
         ) {
-            Image(
-                painter = rememberAsyncImagePainter(
-                    model = screenshotItem.uri,
-                    onError = {
-                        android.util.Log.e("ImageLoading", "Failed to load: ${screenshotItem.uri}", it.result.throwable)
-                    }
-                ),
+            AsyncImage(
+                model = screenshotItem.uri,
                 contentDescription = "Full Screen Screenshot",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize()

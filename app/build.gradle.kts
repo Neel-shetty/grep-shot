@@ -58,7 +58,8 @@ dependencies {
     debugImplementation(libs.androidx.ui.test.manifest)
     
     // Add Coil dependency for image loading
-    implementation("io.coil-kt:coil-compose:2.4.0")
+    implementation("io.coil-kt.coil3:coil-compose:3.2.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.2.0")
 
     // Add Jetpack Navigation Compose dependency
     implementation("androidx.navigation:navigation-compose:2.7.7")
