@@ -1,6 +1,9 @@
 package com.neel.grepshot.ui.screens.home
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.ContentUris
 import android.content.Context
@@ -50,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -80,6 +84,41 @@ fun HomeScreen(
     // Track processing progress from service only
     var serviceProcessingState by remember { mutableStateOf(ScreenshotProcessingService.ProcessingState(0, 0, false)) }
     
+    // Check for notification permission
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } else {
+                true // Permission not required for Android < 13
+            }
+        )
+    }
+    
+    // Permission launcher for notification permission
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+        if (isGranted) {
+            // Try showing the test notification now that we have permission
+            Toast.makeText(
+                context,
+                "Notification permission granted",
+                Toast.LENGTH_SHORT
+            ).show()
+        } else {
+            Toast.makeText(
+                context,
+                "Notification permission denied. Notifications won't work.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     // Service connection
     val serviceConnection = remember {
         object : ServiceConnection {
@@ -189,21 +228,33 @@ fun HomeScreen(
                     coroutineScope.launch {
                         val newScreenshots = repository.checkForNewScreenshots(context)
                         if (newScreenshots.isNotEmpty()) {
-                            // Start the background service to process new screenshots
-                            try {
-                                val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                    action = "START_PROCESSING"
+                            // Check for notification permission before auto-starting service
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
+                                ContextCompat.checkSelfPermission(
+                                    context, 
+                                    Manifest.permission.POST_NOTIFICATIONS
+                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                Log.d("HomeScreen", "Auto-processing delayed: notification permission required")
+                                // We won't auto-start service without notification permission
+                                // This will be handled when user manually starts processing
+                            } else {
+                                // Start the background service to process new screenshots
+                                try {
+                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                        action = "START_PROCESSING"
+                                    }
+                                    Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
+                                    ContextCompat.startForegroundService(context, intent)
+                                    
+                                    Toast.makeText(
+                                        context,
+                                        "Found ${newScreenshots.size} new screenshots. Processing in background.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } catch (e: Exception) {
+                                    Log.e("HomeScreen", "Error auto-starting service", e)
                                 }
-                                Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
-                                ContextCompat.startForegroundService(context, intent)
-                                
-                                Toast.makeText(
-                                    context,
-                                    "Found ${newScreenshots.size} new screenshots. Processing in background.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error auto-starting service", e)
                             }
                         } else {
                             Log.d("HomeScreen", "No new screenshots found during launch check")
@@ -326,18 +377,29 @@ fun HomeScreen(
                         Button(
                             onClick = {
                                 try {
-                                    // Start the foreground service
-                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                        action = "START_PROCESSING"
+                                    // Check for notification permission first
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                        // Request notification permission before starting service
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        Toast.makeText(
+                                            context,
+                                            "Notification permission required for processing updates",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        // Start the foreground service
+                                        val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                            action = "START_PROCESSING"
+                                        }
+                                        Log.d("HomeScreen", "Starting foreground service")
+                                        ContextCompat.startForegroundService(context, intent)
+                                        
+                                        Toast.makeText(
+                                            context,
+                                            "Started background processing (limited to 20 screenshots for dev)",
+                                            Toast.LENGTH_LONG
+                                        ).show()
                                     }
-                                    Log.d("HomeScreen", "Starting foreground service")
-                                    ContextCompat.startForegroundService(context, intent)
-                                    
-                                    Toast.makeText(
-                                        context,
-                                        "Started background processing (limited to 20 screenshots for dev)",
-                                        Toast.LENGTH_LONG
-                                    ).show()
                                 } catch (e: Exception) {
                                     Log.e("HomeScreen", "Error starting service", e)
                                     Toast.makeText(
@@ -407,3 +469,52 @@ fun HomeScreen(
         }
     }
 }
+
+// fun showTestNotification(context: Context) {
+//     try {
+//         val notificationManager = ContextCompat.getSystemService(context, NotificationManager::class.java)
+//             ?: throw Exception("Could not get NotificationManager")
+        
+//         val channelId = "test_notification_channel"
+//         val channelName = "Test Notifications"
+//         val importance = NotificationManager.IMPORTANCE_HIGH  // Changed to HIGH for visibility
+
+//         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+//             val channel = NotificationChannel(channelId, channelName, importance).apply {
+//                 description = "Channel for test notifications"
+//                 enableLights(true)
+//                 enableVibration(true)
+//             }
+//             notificationManager.createNotificationChannel(channel)
+//             Log.d("Notification", "Channel created: $channelId")
+//         }
+
+//         // Create a pending intent for the notification
+//         val intent = Intent(context, context.javaClass).apply {
+//             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+//         }
+//         val pendingIntent = PendingIntent.getActivity(
+//             context, 0, intent, 
+//             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+//         )
+
+//         val notification = NotificationCompat.Builder(context, channelId)
+//             .setSmallIcon(android.R.drawable.ic_dialog_info) // Use your app's notification icon
+//             .setContentTitle("Test Notification")
+//             .setContentText("This is a test notification. If you see this, notifications are working!")
+//             .setPriority(NotificationCompat.PRIORITY_HIGH)
+//             .setContentIntent(pendingIntent)
+//             .setAutoCancel(true)
+//             .build()
+
+//         Log.d("Notification", "Sending notification with ID: 1001")
+//         notificationManager.notify(1001, notification)
+//     } catch (e: Exception) {
+//         Log.e("Notification", "Error showing notification", e)
+//         Toast.makeText(
+//             context,
+//             "Error: ${e.message}",
+//             Toast.LENGTH_LONG
+//         ).show()
+//     }
+// }
