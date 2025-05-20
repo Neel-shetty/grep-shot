@@ -117,4 +117,9 @@ class ScreenshotRepository(context: Context) {
             Log.d("ScreenshotRepo", "Processed ${unprocessedScreenshots.size} new screenshots")
         }
     }
+    
+    // Get all processed URIs from the database
+    suspend fun getAllProcessedUris(): List<String> {
+        return screenshotDao.getAllProcessedUris()
+    }
 }

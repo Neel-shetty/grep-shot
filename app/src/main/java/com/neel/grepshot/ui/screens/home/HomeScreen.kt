@@ -1,8 +1,13 @@
 package com.neel.grepshot.ui.screens.home
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.ContentUris
+import android.content.Context
+import android.content.Intent
+import android.content.ServiceConnection
 import android.os.Build
+import android.os.IBinder
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -22,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -32,6 +38,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,10 +48,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.repository.ScreenshotRepository
+import com.neel.grepshot.service.ScreenshotProcessingService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -60,6 +71,65 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    // Service connection states
+    var processingService by remember { mutableStateOf<ScreenshotProcessingService?>(null) }
+    var serviceConnected by remember { mutableStateOf(false) }
+    
+    // Track processing progress from service only
+    var serviceProcessingState by remember { mutableStateOf(ScreenshotProcessingService.ProcessingState(0, 0, false)) }
+    
+    // Service connection
+    val serviceConnection = remember {
+        object : ServiceConnection {
+            override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
+                val binder = service as ScreenshotProcessingService.LocalBinder
+                processingService = binder.getService()
+                serviceConnected = true
+                
+                // Start collecting progress updates
+                coroutineScope.launch {
+                    processingService?.processingProgress?.collect { state ->
+                        serviceProcessingState = state
+                    }
+                }
+            }
+            
+            override fun onServiceDisconnected(name: ComponentName?) {
+                processingService = null
+                serviceConnected = false
+            }
+        }
+    }
+    
+    // Connect to service when the screen is active
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) {
+                // Bind to service
+                Intent(context, ScreenshotProcessingService::class.java).also { intent ->
+                    context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+                }
+            } else if (event == Lifecycle.Event.ON_STOP) {
+                // Unbind from service
+                if (serviceConnected) {
+                    context.unbindService(serviceConnection)
+                    serviceConnected = false
+                }
+            }
+        }
+        
+        lifecycleOwner.lifecycle.addObserver(observer)
+        
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            if (serviceConnected) {
+                context.unbindService(serviceConnection)
+            }
+        }
+    }
+    
     var hasPermission by remember { 
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -77,24 +147,6 @@ fun HomeScreen(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasPermission = isGranted
-    }
-
-    // Track processing progress
-    var processedCount by remember { mutableStateOf(0) }
-    val totalScreenshots = screenshots.size
-    var processingNewScreenshots by remember { mutableStateOf(false) }
-    
-    // Update processed count periodically for the visible screenshots
-    LaunchedEffect(screenshots) {
-        while(true) {
-            try {
-                processedCount = repository.getProcessedCount(screenshots)
-                delay(1000) // Update every second
-            } catch (e: Exception) {
-                Log.e("ScreenshotsApp", "Error getting processed count", e)
-                break
-            }
-        }
     }
 
     LaunchedEffect(hasPermission) {
@@ -129,24 +181,7 @@ fun HomeScreen(
                 }
                 onScreenshotsLoaded(screenShotsList)
                 
-                // Process only new screenshots with database-level filtering
-                coroutineScope.launch {
-                    processingNewScreenshots = true
-                    
-                    // Use the new method that handles database-level filtering
-                    val unprocessedScreenshots = repository.findUnprocessedScreenshots(screenShotsList)
-                    
-                    if (unprocessedScreenshots.isNotEmpty()) {
-                        repository.processScreenshots(context, unprocessedScreenshots)
-                        Toast.makeText(
-                            context,
-                            "Processing ${unprocessedScreenshots.size} new screenshots",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
-                    
-                    processingNewScreenshots = false
-                }
+                // Removed automatic processing on launch - will only process when button is clicked
             }
         }
     }
@@ -167,47 +202,24 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Development testing FAB
-                FloatingActionButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            repository.clearAllScreenshots()
-                            Toast.makeText(
-                                context,
-                                "Database cleared for testing",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.errorContainer
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Clear Database (Testing)"
-                    )
-                }
-                
-                // Main FAB for processing
-                FloatingActionButton(
-                    onClick = {
-                        coroutineScope.launch {
-                            repository.processScreenshots(context, screenshots)
-                            Toast.makeText(
-                                context,
-                                "Started processing screenshots",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
+            // Development testing FAB - only keeping this one for clearing the database
+            FloatingActionButton(
+                onClick = {
+                    coroutineScope.launch {
+                        repository.clearAllScreenshots()
+                        Toast.makeText(
+                            context,
+                            "Database cleared for testing",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Process Screenshots"
-                    )
-                }
+                },
+                containerColor = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = "Clear Database (Testing)"
+                )
             }
         }
     ) { paddingValues ->
@@ -248,8 +260,8 @@ fun HomeScreen(
                         modifier = Modifier.padding(16.dp)
                     )
                 } else {
-                    // Always show progress indicator
-                    if (totalScreenshots > 0) {
+                    // Service processing state display
+                    if (serviceProcessingState.total > 0) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -259,14 +271,14 @@ fun HomeScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Processing screenshots", 
+                                Text("Background processing", 
                                     style = MaterialTheme.typography.bodyMedium)
-                                Text("$processedCount/$totalScreenshots", 
+                                Text("${serviceProcessingState.processed}/${serviceProcessingState.total}", 
                                     style = MaterialTheme.typography.bodyMedium)
                             }
                             
                             LinearProgressIndicator(
-                                progress = (processedCount.toFloat() / totalScreenshots).coerceIn(0f, 1f),
+                                progress = (serviceProcessingState.processed.toFloat() / serviceProcessingState.total).coerceIn(0f, 1f),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 4.dp)
@@ -274,6 +286,80 @@ fun HomeScreen(
                         }
                     }
                     
+                    // Buttons for background processing control
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Button to start background processing service
+                        Button(
+                            onClick = {
+                                try {
+                                    // Start the foreground service
+                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                        action = "START_PROCESSING"
+                                    }
+                                    Log.d("HomeScreen", "Starting foreground service")
+                                    ContextCompat.startForegroundService(context, intent)
+                                    
+                                    Toast.makeText(
+                                        context,
+                                        "Started background processing (limited to 20 screenshots for dev)",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } catch (e: Exception) {
+                                    Log.e("HomeScreen", "Error starting service", e)
+                                    Toast.makeText(
+                                        context,
+                                        "Error starting background processing: ${e.message}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Process in Background")
+                        }
+                        
+                        // Button to stop processing
+                        Button(
+                            onClick = {
+                                try {
+                                    // Stop the processing
+                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                        action = "STOP_PROCESSING"
+                                    }
+                                    context.startService(intent)
+                                    
+                                    // Also call stopProcessing on the bound service if available
+                                    processingService?.stopProcessing()
+                                    
+                                    Toast.makeText(
+                                        context,
+                                        "Pausing background processing...",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } catch (e: Exception) {
+                                    Log.e("HomeScreen", "Error stopping service", e)
+                                    Toast.makeText(
+                                        context,
+                                        "Error stopping background processing: ${e.message}",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        ) {
+                            Text("Pause Processing")
+                        }
+                    }
+
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         contentPadding = PaddingValues(8.dp),
