@@ -13,6 +13,9 @@ interface ScreenshotDao {
     @Query("SELECT * FROM screenshots")
     suspend fun getAllScreenshots(): List<ScreenshotWithText>
     
+    @Query("SELECT COUNT(*) FROM screenshots")
+    suspend fun getScreenshotCount(): Int
+    
     @Query("SELECT * FROM screenshots WHERE extracted_text LIKE '%' || :query || '%'")
     suspend fun searchScreenshots(query: String): List<ScreenshotWithText>
     

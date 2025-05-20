@@ -55,7 +55,7 @@ fun SearchScreen(
     
     // Get processed count once when screen loads
     LaunchedEffect(Unit) {
-        processedCount = repository.getAllScreenshots().size
+        processedCount = repository.getProcessedScreenshotCount()
     }
     
     // Search when query changes

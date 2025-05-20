@@ -16,6 +16,11 @@ import kotlinx.coroutines.withContext
 class ScreenshotRepository(context: Context) {
     private val screenshotDao = AppDatabase.getDatabase(context).screenshotDao()
     
+    // Get the total count of processed screenshots
+    suspend fun getProcessedScreenshotCount(): Int {
+        return screenshotDao.getScreenshotCount()
+    }
+    
     // Add a new processed screenshot
     suspend fun addScreenshotWithText(uri: Uri, name: String, text: String) {
         val screenshot = ScreenshotWithText(uri, name, text)
