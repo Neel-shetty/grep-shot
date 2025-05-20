@@ -1,7 +1,9 @@
 package com.neel.grepshot.data.repository
 
+import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
+import android.provider.MediaStore
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -121,5 +123,52 @@ class ScreenshotRepository(context: Context) {
     // Get all processed URIs from the database
     suspend fun getAllProcessedUris(): List<String> {
         return screenshotDao.getAllProcessedUris()
+    }
+    
+    // Check for new screenshots and return them without loading all into memory
+    suspend fun checkForNewScreenshots(context: Context, limit: Int = 20): List<ScreenshotItem> {
+        Log.d("ScreenshotRepo", "Checking for new screenshots")
+        
+        val processedUris = screenshotDao.getAllProcessedUris().toSet()
+        val newScreenshots = mutableListOf<ScreenshotItem>()
+        
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DISPLAY_NAME
+        )
+        
+        try {
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                MediaStore.Images.Media.DISPLAY_NAME + " LIKE ?",
+                arrayOf("%screenshot%"),
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                
+                while (cursor.moveToNext() && newScreenshots.size < limit) {
+                    val id = cursor.getLong(idColumn)
+                    val name = cursor.getString(nameColumn)
+                    val contentUri = ContentUris.withAppendedId(
+                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                        id
+                    )
+                    
+                    // Check if this screenshot is already processed
+                    if (!processedUris.contains(contentUri.toString())) {
+                        newScreenshots.add(ScreenshotItem(contentUri, name))
+                    }
+                }
+            }
+            
+            Log.d("ScreenshotRepo", "Found ${newScreenshots.size} new screenshots")
+            return newScreenshots
+            
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Error checking for new screenshots", e)
+            return emptyList()
+        }
     }
 }

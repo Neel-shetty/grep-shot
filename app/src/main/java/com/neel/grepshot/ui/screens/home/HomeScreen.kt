@@ -149,6 +149,9 @@ fun HomeScreen(
         hasPermission = isGranted
     }
 
+    // Add a state to track automatic background processing
+    var autoProcessingLaunched by remember { mutableStateOf(false) }
+
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
             val projection = arrayOf(
@@ -181,7 +184,33 @@ fun HomeScreen(
                 }
                 onScreenshotsLoaded(screenShotsList)
                 
-                // Removed automatic processing on launch - will only process when button is clicked
+                // After loading, check for new screenshots in the background
+                if (!autoProcessingLaunched) {
+                    coroutineScope.launch {
+                        val newScreenshots = repository.checkForNewScreenshots(context)
+                        if (newScreenshots.isNotEmpty()) {
+                            // Start the background service to process new screenshots
+                            try {
+                                val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                    action = "START_PROCESSING"
+                                }
+                                Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
+                                ContextCompat.startForegroundService(context, intent)
+                                
+                                Toast.makeText(
+                                    context,
+                                    "Found ${newScreenshots.size} new screenshots. Processing in background.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } catch (e: Exception) {
+                                Log.e("HomeScreen", "Error auto-starting service", e)
+                            }
+                        } else {
+                            Log.d("HomeScreen", "No new screenshots found during launch check")
+                        }
+                        autoProcessingLaunched = true
+                    }
+                }
             }
         }
     }
