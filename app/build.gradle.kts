@@ -63,4 +63,7 @@ dependencies {
 
     // Add Jetpack Navigation Compose dependency
     implementation("androidx.navigation:navigation-compose:2.7.7")
+    
+    // Add ML Kit text recognition dependency
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 }

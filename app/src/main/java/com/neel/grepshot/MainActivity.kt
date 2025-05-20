@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.neel.grepshot
 
 import android.Manifest
@@ -7,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -28,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -56,6 +60,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import coil3.compose.AsyncImage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizerOptionsInterface
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import com.neel.grepshot.ui.theme.GrepShotTheme
 
 class MainActivity : ComponentActivity() {
@@ -79,11 +90,60 @@ data class ScreenshotItem(
     val name: String
 )
 
+// New data class to store screenshot with extracted text
+data class ScreenshotWithText(
+    val uri: Uri,
+    val name: String,
+    val extractedText: String
+)
+
+// Repository to manage screenshot text data
+class ScreenshotRepository {
+    // Map URI string to ScreenshotWithText object
+    private val screenshotTextMap = mutableStateOf<Map<String, ScreenshotWithText>>(emptyMap())
+    
+    // Add a new processed screenshot
+    fun addScreenshotWithText(uri: Uri, name: String, text: String) {
+        val uriString = uri.toString()
+        val updatedMap = screenshotTextMap.value.toMutableMap()
+        updatedMap[uriString] = ScreenshotWithText(uri, name, text)
+        screenshotTextMap.value = updatedMap
+        Log.d("ScreenshotRepo", "Added text for $name: ${text.take(50)}...")
+    }
+    
+    // Search for screenshots containing the query text
+    fun searchScreenshots(query: String): List<ScreenshotWithText> {
+        if (query.isEmpty()) return emptyList()
+        
+        return screenshotTextMap.value.values.filter {
+            it.extractedText.contains(query, ignoreCase = true)
+        }
+    }
+    
+    // Get all processed screenshots
+    fun getAllScreenshots(): List<ScreenshotWithText> {
+        return screenshotTextMap.value.values.toList()
+    }
+    
+    // Check if a screenshot has been processed
+    fun isScreenshotProcessed(uri: Uri): Boolean {
+        return screenshotTextMap.value.containsKey(uri.toString())
+    }
+    
+    // Get a specific screenshot
+    fun getScreenshot(uri: Uri): ScreenshotWithText? {
+        return screenshotTextMap.value[uri.toString()]
+    }
+}
+
 @Composable
 fun AppNavigation(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val context = LocalContext.current
     var screenshots by remember { mutableStateOf<List<ScreenshotItem>>(emptyList()) }
+    
+    // Create shared repository instance
+    val screenshotRepository = remember { ScreenshotRepository() }
     
     NavHost(
         navController = navController, 
@@ -97,6 +157,10 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                 onScreenshotClick = { screenshot ->
                     val encodedUri = Uri.encode(screenshot.uri.toString())
                     navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
+                },
+                repository = screenshotRepository,
+                onNavigateToSearch = {
+                    navController.navigate("search")
                 }
             )
         }
@@ -116,6 +180,19 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             
             FullScreenImageScreen(
                 screenshotItem = screenshotItem,
+                onNavigateBack = { navController.popBackStack() },
+                repository = screenshotRepository
+            )
+        }
+        
+        // Add search screen
+        composable("search") {
+            SearchScreen(
+                repository = screenshotRepository,
+                onScreenshotClick = { screenshot ->
+                    val encodedUri = Uri.encode(screenshot.uri.toString())
+                    navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
+                },
                 onNavigateBack = { navController.popBackStack() }
             )
         }
@@ -127,6 +204,8 @@ fun ScreenshotsApp(
     screenshots: List<ScreenshotItem>,
     onScreenshotsLoaded: (List<ScreenshotItem>) -> Unit,
     onScreenshotClick: (ScreenshotItem) -> Unit,
+    repository: ScreenshotRepository,
+    onNavigateToSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -184,52 +263,71 @@ fun ScreenshotsApp(
         }
     }
 
-    Column(
-        modifier = modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (!hasPermission) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(text = "Permission needed to access screenshots")
-                Button(
-                    modifier = Modifier.padding(top = 16.dp),
-                    onClick = {
-                        permissionLauncher.launch(
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                Manifest.permission.READ_MEDIA_IMAGES
-                            } else {
-                                Manifest.permission.READ_EXTERNAL_STORAGE
-                            }
+    Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("GrepShot") },
+                actions = {
+                    // Add search button to the top bar
+                    IconButton(onClick = onNavigateToSearch) {
+                        Icon(
+                            imageVector = androidx.compose.material.icons.Icons.Default.Search,
+                            contentDescription = "Search"
                         )
                     }
-                ) {
-                    Text("Request Permission")
                 }
-            }
-        } else {
-            if (screenshots.isEmpty()) {
-                Text(
-                    text = "No screenshots found",
-                    modifier = Modifier.padding(16.dp)
-                )
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    contentPadding = PaddingValues(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (!hasPermission) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
                 ) {
-                    items(screenshots) { screenshot ->
-                        ScreenshotCard(
-                            screenshot = screenshot,
-                            onClick = { onScreenshotClick(screenshot) }
-                        )
+                    Text(text = "Permission needed to access screenshots")
+                    Button(
+                        modifier = Modifier.padding(top = 16.dp),
+                        onClick = {
+                            permissionLauncher.launch(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                    Manifest.permission.READ_MEDIA_IMAGES
+                                } else {
+                                    Manifest.permission.READ_EXTERNAL_STORAGE
+                                }
+                            )
+                        }
+                    ) {
+                        Text("Request Permission")
+                    }
+                }
+            } else {
+                if (screenshots.isEmpty()) {
+                    Text(
+                        text = "No screenshots found",
+                        modifier = Modifier.padding(16.dp)
+                    )
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(screenshots) { screenshot ->
+                            ScreenshotCard(
+                                screenshot = screenshot,
+                                onClick = { onScreenshotClick(screenshot) }
+                            )
+                        }
                     }
                 }
             }
@@ -267,11 +365,61 @@ fun ScreenshotCard(
 @Composable
 fun FullScreenImageScreen(
     screenshotItem: ScreenshotItem,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    repository: ScreenshotRepository
 ) {
+    val context = LocalContext.current
+    var isProcessing by remember { mutableStateOf(false) }
+    var extractedText by remember { mutableStateOf<String?>(null) }
+    
     // Handle system back button
     androidx.activity.compose.BackHandler {
         onNavigateBack()
+    }
+    
+    // Check if already processed or process image with ML Kit
+    LaunchedEffect(screenshotItem.uri) {
+        if (!repository.isScreenshotProcessed(screenshotItem.uri)) {
+            isProcessing = true
+            try {
+                val inputImage = InputImage.fromFilePath(context, screenshotItem.uri)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                
+                val result = withContext(Dispatchers.IO) {
+                    suspendCancellableCoroutine<String> { continuation ->
+                        recognizer.process(inputImage)
+                            .addOnSuccessListener { visionText ->
+                                val text = visionText.text
+                                if (continuation.isActive) {
+                                    continuation.resume(text) { 
+                                        // Handle cancellation if needed
+                                    }
+                                }
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("TextRecognition", "Error processing image", e)
+                                if (continuation.isActive) {
+                                    continuation.resume("") {
+                                        // Handle cancellation if needed
+                                    }
+                                }
+                            }
+                    }
+                }
+                
+                extractedText = result
+                repository.addScreenshotWithText(screenshotItem.uri, screenshotItem.name, result)
+                
+            } catch (e: Exception) {
+                Log.e("TextRecognition", "Error creating InputImage", e)
+                extractedText = ""
+                repository.addScreenshotWithText(screenshotItem.uri, screenshotItem.name, "")
+            } finally {
+                isProcessing = false
+            }
+        } else {
+            extractedText = repository.getScreenshot(screenshotItem.uri)?.extractedText
+        }
     }
     
     Scaffold { paddingValues ->
@@ -301,14 +449,219 @@ fun FullScreenImageScreen(
                 )
             }
             
-            Text(
-                text = screenshotItem.name,
-                color = Color.White,
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
-                textAlign = TextAlign.Center
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.5f))
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = screenshotItem.name,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                
+                // Show status about text recognition
+                if (isProcessing) {
+                    Text(
+                        text = "Processing text...",
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
+                } else if (extractedText != null && extractedText!!.isNotEmpty()) {
+                    Text(
+                        text = "Text detected and saved",
+                        color = Color.Green,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
+                } else if (extractedText != null) {
+                    Text(
+                        text = "No text detected in image",
+                        color = Color.LightGray,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchScreen(
+    repository: ScreenshotRepository,
+    onScreenshotClick: (ScreenshotWithText) -> Unit,
+    onNavigateBack: () -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var searchResults by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
+    
+    Scaffold(
+        topBar = {
+            androidx.compose.material3.TopAppBar(
+                title = { Text("Search Screenshots") },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                }
             )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp)
+        ) {
+            // Search field
+            androidx.compose.material3.TextField(
+                value = searchQuery,
+                onValueChange = { 
+                    searchQuery = it
+                    searchResults = if (it.isNotEmpty()) {
+                        repository.searchScreenshots(it)
+                    } else {
+                        emptyList()
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("Search for text in screenshots") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Default.Search,
+                        contentDescription = "Search"
+                    )
+                },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                ),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onSearch = {
+                        searchResults = repository.searchScreenshots(searchQuery)
+                    }
+                )
+            )
+            
+            // Show processing status
+            val processedCount = repository.getAllScreenshots().size
+            Text(
+                text = "$processedCount screenshots processed for text",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                textAlign = TextAlign.Center,
+                color = androidx.compose.ui.graphics.Color.Gray
+            )
+            
+            // Results grid
+            if (searchQuery.isNotEmpty()) {
+                if (searchResults.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No matching results found")
+                    }
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        items(searchResults) { screenshot ->
+                            SearchResultCard(
+                                screenshot = screenshot,
+                                onClick = { onScreenshotClick(screenshot) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Enter text to search in your screenshots")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SearchResultCard(
+    screenshot: ScreenshotWithText,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = screenshot.uri,
+                    contentDescription = screenshot.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Text(
+                    text = screenshot.name,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                
+                // Show a snippet of the matched text
+                val snippetText = if (screenshot.extractedText.length > 50) {
+                    "${screenshot.extractedText.take(50)}..."
+                } else {
+                    screenshot.extractedText
+                }
+                
+                Text(
+                    text = snippetText,
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                    color = androidx.compose.ui.graphics.Color.Gray,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }
