@@ -84,4 +84,20 @@ class ScreenshotRepository(context: Context) {
     suspend fun getScreenshot(uri: Uri): ScreenshotWithText? {
         return screenshotDao.getScreenshot(uri.toString())
     }
+    
+    // Clear all screenshots from the database
+    suspend fun clearAllScreenshots() {
+        screenshotDao.clearAllScreenshots()
+    }
+    
+    // Get count of processed screenshots from a specific list
+    suspend fun getProcessedCount(screenshots: List<ScreenshotItem>): Int {
+        var count = 0
+        for (screenshot in screenshots) {
+            if (isScreenshotProcessed(screenshot.uri)) {
+                count++
+            }
+        }
+        return count
+    }
 }

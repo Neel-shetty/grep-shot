@@ -30,4 +30,7 @@ interface ScreenshotDao {
     
     @Delete
     suspend fun deleteScreenshot(screenshot: ScreenshotWithText)
+    
+    @Query("DELETE FROM screenshots")
+    suspend fun clearAllScreenshots()
 }

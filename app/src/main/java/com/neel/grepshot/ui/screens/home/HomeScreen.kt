@@ -5,6 +5,7 @@ import android.content.ContentUris
 import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -18,9 +19,11 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.repository.ScreenshotRepository
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +59,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     var hasPermission by remember { 
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -76,21 +83,16 @@ fun HomeScreen(
     var processedCount by remember { mutableStateOf(0) }
     val totalScreenshots = screenshots.size
     
-    // Update processed count whenever screenshots change
+    // Update processed count periodically for the visible screenshots
     LaunchedEffect(screenshots) {
-        try {
-            val processedScreenshots = repository.getAllScreenshots()
-            processedCount = processedScreenshots.size
-            
-            if (screenshots.isNotEmpty()) {
-                // Add a log to track when batch processing starts
-                Log.d("ScreenshotsApp", "Starting batch processing of ${screenshots.size} screenshots")
-                
-                // Process all screenshots in the background
-                repository.processScreenshots(context, screenshots)
+        while(true) {
+            try {
+                processedCount = repository.getProcessedCount(screenshots)
+                delay(1000) // Update every second
+            } catch (e: Exception) {
+                Log.e("ScreenshotsApp", "Error getting processed count", e)
+                break
             }
-        } catch (e: Exception) {
-            Log.e("ScreenshotsApp", "Error processing screenshots", e)
         }
     }
 
@@ -143,6 +145,50 @@ fun HomeScreen(
                     }
                 }
             )
+        },
+        floatingActionButton = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Development testing FAB
+                FloatingActionButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            repository.clearAllScreenshots()
+                            Toast.makeText(
+                                context,
+                                "Database cleared for testing",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Clear Database (Testing)"
+                    )
+                }
+                
+                // Main FAB for processing
+                FloatingActionButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            repository.processScreenshots(context, screenshots)
+                            Toast.makeText(
+                                context,
+                                "Started processing screenshots",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Process Screenshots"
+                    )
+                }
+            }
         }
     ) { paddingValues ->
         Column(
@@ -182,8 +228,8 @@ fun HomeScreen(
                         modifier = Modifier.padding(16.dp)
                     )
                 } else {
-                    // Only show progress indicator if processing is not complete
-                    if (totalScreenshots > 0 && processedCount < totalScreenshots) {
+                    // Always show progress indicator
+                    if (totalScreenshots > 0) {
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -200,7 +246,7 @@ fun HomeScreen(
                             }
                             
                             LinearProgressIndicator(
-                                progress = processedCount.toFloat() / totalScreenshots,
+                                progress = (processedCount.toFloat() / totalScreenshots).coerceIn(0f, 1f),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(top = 4.dp)
