@@ -174,6 +174,9 @@ fun ScreenshotsApp(
                         id
                     )
                     screenShotsList.add(ScreenshotItem(contentUri, name))
+                    
+                    // Limit to 20 images
+                    if (screenShotsList.size >= 20) break
                 }
                 onScreenshotsLoaded(screenShotsList)
             }
