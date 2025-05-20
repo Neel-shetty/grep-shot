@@ -6,11 +6,23 @@
         <option name="testRunner" value="CHOOSE_PER_TEST" />
         <option name="externalProjectPath" value="$PROJECT_DIR$" />
         <option name="gradleJvm" value="#GRADLE_LOCAL_JAVA_HOME" />
+        <option name="modules">
+          <set>
+            <option value="/media/neel/data/code/app/grepShot" />
+            <option value="/media/neel/data/code/app/grepShot/app" />
+          </set>
+        </option>
       </GradleProjectSettings>
       <GradleProjectSettings>
         <option name="testRunner" value="CHOOSE_PER_TEST" />
         <option name="externalProjectPath" value="/media/neel/data/code/app/grepShot" />
         <option name="gradleJvm" value="#GRADLE_LOCAL_JAVA_HOME" />
+        <option name="modules">
+          <set>
+            <option value="/media/neel/data/code/app/grepShot" />
+            <option value="/media/neel/data/code/app/grepShot/app" />
+          </set>
+        </option>
       </GradleProjectSettings>
     </option>
   </component>
