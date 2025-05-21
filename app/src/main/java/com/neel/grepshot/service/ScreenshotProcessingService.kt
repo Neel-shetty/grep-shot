@@ -169,29 +169,17 @@ class ScreenshotProcessingService : Service() {
             Log.d(TAG, "Starting screenshot processing")
             _processingProgress.value = ProcessingState(0, 0, true)
             
-            // Get only the last 20 screenshots for development purposes
-            val allScreenshots = loadAllScreenshots()
-            val screenshots = allScreenshots.take(20) // TEMP: Limit to 20 screenshots for development
-            
+            // Get screenshots
+            val screenshots = loadAllScreenshots()
             val total = screenshots.size
-            Log.d(TAG, "Limited to $total screenshots (development mode)")
+            Log.d(TAG, "Found $total screenshots to process")
             
             _processingProgress.value = ProcessingState(0, total, true)
             updateNotification(0, total)
             
-            // Get processed screenshots to resume from where we left off
-            val processedUris = repository.getAllProcessedUris().toMutableSet()
-            
-            // Find unprocessed screenshots
-            val unprocessedScreenshots = screenshots.filter { screenshot -> 
-                !processedUris.contains(screenshot.uri.toString()) 
-            }
-            val totalToProcess = unprocessedScreenshots.size
-            Log.d(TAG, "Found $totalToProcess unprocessed screenshots")
-            
-            if (totalToProcess == 0) {
-                _processingProgress.value = ProcessingState(total, total, false)
-                updateNotification(total, total)
+            if (total == 0) {
+                _processingProgress.value = ProcessingState(0, 0, false)
+                updateNotification(0, 0)
                 Log.d(TAG, "No screenshots to process")
                 stopSelf()
                 return
@@ -199,9 +187,9 @@ class ScreenshotProcessingService : Service() {
             
             // Process them in batches of 5 to avoid memory issues
             val batchSize = 5
-            var processed = total - totalToProcess
+            var processed = 0
             
-            for (i in unprocessedScreenshots.indices step batchSize) {
+            for (i in screenshots.indices step batchSize) {
                 // Check if processing has been cancelled
                 if (!isProcessingActive) {
                     Log.d(TAG, "Processing cancelled at $processed/$total")
@@ -215,8 +203,8 @@ class ScreenshotProcessingService : Service() {
                     return
                 }
                 
-                val endIndex = minOf(i + batchSize, unprocessedScreenshots.size)
-                val batch = unprocessedScreenshots.subList(i, endIndex)
+                val endIndex = minOf(i + batchSize, screenshots.size)
+                val batch = screenshots.subList(i, endIndex)
                 
                 Log.d(TAG, "Processing batch ${i/batchSize + 1}, size: ${batch.size}")
                 repository.processScreenshots(applicationContext, batch)
@@ -291,7 +279,8 @@ class ScreenshotProcessingService : Service() {
             Log.e(TAG, "Error loading screenshots", e)
         }
         
-        return screenshots
+        // Limit to 20 screenshots for development purposes
+        return screenshots.take(20)
     }
     
     override fun onDestroy() {
