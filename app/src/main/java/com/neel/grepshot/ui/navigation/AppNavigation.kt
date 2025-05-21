@@ -18,13 +18,13 @@ import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.repository.ScreenshotRepository
 import com.neel.grepshot.ui.screens.fullscreen.FullScreenImageScreen
 import com.neel.grepshot.ui.screens.home.HomeScreen
-import com.neel.grepshot.ui.screens.search.SearchScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppNavigation(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
     val context = LocalContext.current
+    
     var screenshots by remember { mutableStateOf<List<ScreenshotItem>>(emptyList()) }
     
     // Create shared repository instance
@@ -44,9 +44,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
                 },
                 repository = screenshotRepository,
-                onNavigateToSearch = {
-                    navController.navigate("search")
-                }
+                onNavigateToSearch = {} // Empty function since search is now in HomeScreen
             )
         }
         
@@ -70,16 +68,6 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             )
         }
         
-        // Add search screen
-        composable("search") {
-            SearchScreen(
-                repository = screenshotRepository,
-                onScreenshotClick = { screenshot ->
-                    val encodedUri = Uri.encode(screenshot.uri.toString())
-                    navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
-                },
-                onNavigateBack = { navController.popBackStack() }
-            )
-        }
+        // Search screen removed as it's now integrated into HomeScreen
     }
 }
