@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -205,9 +206,6 @@ fun HomeScreen(
         hasPermission = isGranted
     }
 
-    // Add a state to track automatic background processing
-    var autoProcessingLaunched by rememberSaveable { mutableStateOf(false) }
-
     // Search states
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
@@ -242,6 +240,22 @@ fun HomeScreen(
         }
     }
     
+    // Periodic refresh while processing is happening
+    LaunchedEffect(serviceProcessingState.isProcessing) {
+        if (serviceProcessingState.isProcessing) {
+            while (serviceProcessingState.isProcessing) {
+                delay(5000) // Refresh every 5 seconds
+                processedCount = repository.getProcessedScreenshotCount()
+                dbScreenshots = repository.getAllScreenshots()
+                
+                val screenshotItems = dbScreenshots.map { 
+                    ScreenshotItem(it.uri, it.name) 
+                }
+                onScreenshotsLoaded(screenshotItems)
+            }
+        }
+    }
+    
     // Search when query changes
     LaunchedEffect(searchQuery) {
         if (searchQuery.isNotEmpty() && isSearchActive) {
@@ -249,48 +263,6 @@ fun HomeScreen(
         } else {
             searchResults = emptyList()
             isSearchActive = false
-        }
-    }
-
-    // Check for unprocessed screenshots in the background
-    LaunchedEffect(hasPermission) {
-        if (hasPermission && !autoProcessingLaunched) {
-            coroutineScope.launch {
-                val newScreenshots = repository.checkForNewScreenshots(context)
-                if (newScreenshots.isNotEmpty()) {
-                    // Check for notification permission before auto-starting service
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
-                        ContextCompat.checkSelfPermission(
-                            context, 
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        Log.d("HomeScreen", "Auto-processing delayed: notification permission required")
-                        // We won't auto-start service without notification permission
-                        // This will be handled when user manually starts processing
-                    } else {
-                        // Start the background service to process new screenshots
-                        try {
-                            val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                action = "START_PROCESSING"
-                            }
-                            Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
-                            ContextCompat.startForegroundService(context, intent)
-                            
-                            Toast.makeText(
-                                context,
-                                "Found ${newScreenshots.size} new screenshots. Processing in background.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } catch (e: Exception) {
-                            Log.e("HomeScreen", "Error auto-starting service", e)
-                        }
-                    }
-                } else {
-                    Log.d("HomeScreen", "No new screenshots found during launch check")
-                }
-                autoProcessingLaunched = true
-            }
         }
     }
 
@@ -336,15 +308,6 @@ fun HomeScreen(
                 .padding(paddingValues),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Show processing status
-            Text(
-                text = "$processedCount screenshots processed for text",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodySmall
-            )
-
             // Add search bar at the top of the main content area
             if (hasPermission) {
                 TextField(
