@@ -63,61 +63,26 @@ class ScreenshotProcessingService : Service() {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand: ${intent?.action}")
-        
-        // Create and show notification immediately to avoid ANR
-        val initialNotification = createNotification(0, 0)
-        
-        // Use the proper foreground service type for Android 14+ (SDK 34+)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, 
-                initialNotification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC // Using DATA_SYNC as we're processing data
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, initialNotification)
-        }
-        
         when (intent?.action) {
             "START_PROCESSING" -> {
-                // Reset the active flag and start processing
-                isProcessingActive = true
-                serviceScope.launch {
-                    try {
-                        processAllScreenshots()
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error in processing", e)
-                    }
-                }
+                startProcessingInBackground()
             }
             "STOP_PROCESSING" -> {
-                // Set the flag to stop processing
-                isProcessingActive = false
-                // Don't stop the service immediately, let the processing loop handle it
-                updateNotification(
-                    _processingProgress.value.processed,
-                    _processingProgress.value.total
-                )
-            }
-            "CANCEL_PROCESSING" -> {
-                // Just stop the service completely
+                stopProcessing()
                 stopSelf()
             }
         }
-        
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+    
+    // Function to start the background processing of all screenshots
+    private fun startProcessingInBackground() {
+        // ...existing code...
     }
     
     // Public method for the UI to stop processing
     fun stopProcessing() {
-        isProcessingActive = false
-        _processingProgress.value = ProcessingState(
-            _processingProgress.value.processed,
-            _processingProgress.value.total,
-            false,
-            "Processing paused"
-        )
+        // ...existing code...
     }
     
     private fun createNotificationChannel() {

@@ -214,8 +214,8 @@ fun HomeScreen(
     
     // Get processed count and load screenshots from database
     LaunchedEffect(Unit) {
+        // Load processed screenshots from the database
         processedCount = repository.getProcessedScreenshotCount()
-        // Load all screenshots from the database instead of media store
         dbScreenshots = repository.getAllScreenshots()
         
         // Convert ScreenshotWithText to ScreenshotItem for compatibility with existing code
