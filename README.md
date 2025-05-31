@@ -8,6 +8,9 @@
 - [x] export import data
 - [ ] fix notifications timing, shows now always
 - [ ] show time taken to process
+
+### Backlog
+
 - [ ] scroll bar for images
 
 ### Optional Feature Ideas

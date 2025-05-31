@@ -1,17 +1,12 @@
 package com.neel.grepshot.ui.screens.home
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.ComponentName
-import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
-import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -36,7 +31,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -52,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,11 +57,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -91,7 +84,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     
     // Service connection states
     var processingService by remember { mutableStateOf<ScreenshotProcessingService?>(null) }
@@ -106,39 +99,39 @@ fun HomeScreen(
     var isLoading by remember { mutableStateOf(true) }
     
     // Check for notification permission
-    var hasNotificationPermission by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else {
-                true // Permission not required for Android < 13
-            }
-        )
-    }
+//    var hasNotificationPermission by remember {
+//        mutableStateOf(
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//                ContextCompat.checkSelfPermission(
+//                    context,
+//                    Manifest.permission.POST_NOTIFICATIONS
+//                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+//            } else {
+//                true // Permission not required for Android < 13
+//            }
+//        )
+//    }
     
     // Permission launcher for notification permission
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasNotificationPermission = isGranted
-        if (isGranted) {
-            // Try showing the test notification now that we have permission
-            Toast.makeText(
-                context,
-                "Notification permission granted",
-                Toast.LENGTH_SHORT
-            ).show()
-        } else {
-            Toast.makeText(
-                context,
-                "Notification permission denied. Notifications won't work.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
+//    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+//        ActivityResultContracts.RequestPermission()
+//    ) { isGranted ->
+//        hasNotificationPermission = isGranted
+//        if (isGranted) {
+//            // Try showing the test notification now that we have permission
+//            Toast.makeText(
+//                context,
+//                "Notification permission granted",
+//                Toast.LENGTH_SHORT
+//            ).show()
+//        } else {
+//            Toast.makeText(
+//                context,
+//                "Notification permission denied. Notifications won't work.",
+//                Toast.LENGTH_LONG
+//            ).show()
+//        }
+//    }
 
     // Service connection
     val serviceConnection = remember {
@@ -215,7 +208,7 @@ fun HomeScreen(
     // Search states
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
-    var processedCount by remember { mutableStateOf(0) }
+    var processedCount by remember { mutableIntStateOf(0) }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
     
     // Get processed count and load screenshots from database
@@ -499,12 +492,12 @@ fun HomeScreen(
                             Text("${serviceProcessingState.processed}/${serviceProcessingState.total}", 
                                 style = MaterialTheme.typography.bodyMedium)
                         }
-                        
+
                         LinearProgressIndicator(
-                            progress = (serviceProcessingState.processed.toFloat() / serviceProcessingState.total).coerceIn(0f, 1f),
+                            progress = { (serviceProcessingState.processed.toFloat() / serviceProcessingState.total).coerceIn(0f, 1f) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp)
+                                .padding(top = 4.dp),
                         )
                     }
                 }
