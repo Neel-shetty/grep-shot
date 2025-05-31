@@ -377,6 +377,7 @@ class ScreenshotRepository(private val context: Context) {
                 put("path", screenshot.uri.toString())
                 put("name", screenshot.name)
                 put("text", screenshot.extractedText)
+                put("createdAt", screenshot.createdAt) // Add createdAt to export
             }
             jsonArray.put(jsonObject)
         }
@@ -435,14 +436,12 @@ class ScreenshotRepository(private val context: Context) {
                     val uriString = jsonObject.getString("path")
                     val name = jsonObject.getString("name")
                     val extractedText = jsonObject.getString("text")
+                    val createdAt = if (jsonObject.has("createdAt")) jsonObject.getLong("createdAt") else getFileCreationTime(Uri.parse(uriString)) // Read createdAt if present
                     
                     val uri = Uri.parse(uriString)
                     
                     // Check if screenshot already exists in database
                     if (!isScreenshotProcessed(uri)) {
-                        // Get the actual file creation time from filesystem
-                        val createdAt = getFileCreationTime(uri)
-                        
                         val screenshot = ScreenshotWithText(
                             uri = uri,
                             name = name,
@@ -490,6 +489,7 @@ class ScreenshotRepository(private val context: Context) {
                 put("path", screenshot.uri.toString())
                 put("name", screenshot.name)
                 put("text", screenshot.extractedText)
+                put("createdAt", screenshot.createdAt) // Add createdAt to legacy export
             }
             jsonArray.put(jsonObject)
         }
