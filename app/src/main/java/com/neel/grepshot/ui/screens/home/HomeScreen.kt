@@ -347,15 +347,6 @@ fun HomeScreen(
                 .padding(paddingValues),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Show processing status
-            Text(
-                text = "$processedCount screenshots processed for text",
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodySmall
-            )
-
             // Add search bar at the top of the main content area
             if (hasPermission) {
                 TextField(
@@ -368,7 +359,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Search for text in screenshots") },
+                    placeholder = { Text("Search $processedCount screenshots for text") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
