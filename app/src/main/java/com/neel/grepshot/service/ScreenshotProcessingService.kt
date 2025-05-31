@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -85,7 +86,7 @@ class ScreenshotProcessingService : Service() {
                 isProcessingActive = true
                 serviceScope.launch {
                     try {
-                        processAllScreenshots()
+                        processScreenshots()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in processing", e)
                     }
@@ -96,8 +97,10 @@ class ScreenshotProcessingService : Service() {
                 isProcessingActive = false
                 // Don't stop the service immediately, let the processing loop handle it
                 updateNotification(
+                    "Processing paused",
                     _processingProgress.value.processed,
-                    _processingProgress.value.total
+                    _processingProgress.value.total,
+                    false
                 )
             }
             "CANCEL_PROCESSING" -> {
@@ -164,123 +167,121 @@ class ScreenshotProcessingService : Service() {
         return builder.build()
     }
     
-    private suspend fun processAllScreenshots() {
+    private suspend fun processScreenshots() {
         try {
             Log.d(TAG, "Starting screenshot processing")
-            _processingProgress.value = ProcessingState(0, 0, true)
             
-            // Get screenshots
-            val screenshots = loadAllScreenshots()
-            val total = screenshots.size
-            Log.d(TAG, "Found $total screenshots to process")
+            // Get unprocessed screenshots
+            val unprocessedScreenshots = repository.checkForNewScreenshots(this)
             
-            _processingProgress.value = ProcessingState(0, total, true)
-            updateNotification(0, total)
-            
-            if (total == 0) {
-                _processingProgress.value = ProcessingState(0, 0, false)
-                updateNotification(0, 0)
-                Log.d(TAG, "No screenshots to process")
-                stopSelf()
+            if (unprocessedScreenshots.isEmpty()) {
+                Log.d(TAG, "No unprocessed screenshots found")
+                updateNotification("No new screenshots to process", 0, 0, false)
+                stopProcessing()
                 return
             }
+
+            Log.d(TAG, "Found ${unprocessedScreenshots.size} unprocessed screenshots")
             
-            // Process them in batches of 5 to avoid memory issues
-            val batchSize = 5
-            var processed = 0
+            // Update processing state
+            _processingProgress.value = ProcessingState(
+                total = unprocessedScreenshots.size,
+                processed = 0,
+                isProcessing = true
+            )
             
-            for (i in screenshots.indices step batchSize) {
-                // Check if processing has been cancelled
-                if (!isProcessingActive) {
-                    Log.d(TAG, "Processing cancelled at $processed/$total")
-                    _processingProgress.value = ProcessingState(
-                        processed, 
-                        total, 
-                        false,
-                        "Processing paused"
+            updateNotification("Processing screenshots...", 0, unprocessedScreenshots.size, true)
+            
+            // Process screenshots using the repository method
+            try {
+                Log.d(TAG, "About to call repository.processNewScreenshots with ${unprocessedScreenshots.size} screenshots")
+                
+                // Process all new screenshots at once
+                repository.processNewScreenshots(this, unprocessedScreenshots)
+                
+                Log.d(TAG, "Repository.processNewScreenshots completed")
+                
+                // Update final state
+                _processingProgress.value = ProcessingState(
+                    total = unprocessedScreenshots.size,
+                    processed = unprocessedScreenshots.size,
+                    isProcessing = false
+                )
+                
+                if (isProcessingActive) {
+                    updateNotification(
+                        "Processing complete! Processed ${unprocessedScreenshots.size} screenshots",
+                        unprocessedScreenshots.size,
+                        unprocessedScreenshots.size,
+                        false
                     )
-                    updateNotification(processed, total)
-                    return
+                    
+                    Log.d(TAG, "Processing completed successfully. Processed ${unprocessedScreenshots.size} screenshots")
+                    
+                    // Keep notification for a few seconds then remove it
+                    delay(3000)
+                } else {
+                    updateNotification(
+                        "Processing paused",
+                        unprocessedScreenshots.size,
+                        unprocessedScreenshots.size,
+                        false
+                    )
+                    
+                    Log.d(TAG, "Processing was paused by user")
                 }
                 
-                val endIndex = minOf(i + batchSize, screenshots.size)
-                val batch = screenshots.subList(i, endIndex)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing screenshots", e)
+                updateNotification("Processing failed: ${e.message}", 0, unprocessedScreenshots.size, false)
                 
-                Log.d(TAG, "Processing batch ${i/batchSize + 1}, size: ${batch.size}")
-                repository.processScreenshots(applicationContext, batch)
-                
-                processed += batch.size
-                _processingProgress.value = ProcessingState(processed, total, true)
-                updateNotification(processed, total)
-                
-                Log.d(TAG, "Processed batch: $processed/$total")
+                // Update state to indicate processing stopped due to error
+                _processingProgress.value = ProcessingState(
+                    total = unprocessedScreenshots.size,
+                    processed = 0,
+                    isProcessing = false
+                )
             }
             
-            // All done
-            _processingProgress.value = ProcessingState(total, total, false)
-            updateNotification(total, total)
-            Log.d(TAG, "All screenshots processed")
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Error processing screenshots", e)
+            Log.e(TAG, "Error in screenshot processing", e)
+            updateNotification("Processing failed: ${e.message}", 0, 0, false)
+            
+            // Update state to indicate processing stopped due to error
             _processingProgress.value = ProcessingState(
-                _processingProgress.value.processed, 
-                _processingProgress.value.total, 
-                false,
-                e.message ?: "Unknown error"
+                total = 0,
+                processed = 0,
+                isProcessing = false
             )
         } finally {
-            // Stop the service when done
+            // Clean up
+            stopForeground(true)
             stopSelf()
         }
     }
     
-    private fun updateNotification(processed: Int, total: Int) {
+    private fun updateNotification(contentText: String, processed: Int, total: Int, ongoing: Boolean) {
         try {
             val notificationManager = getSystemService(NotificationManager::class.java)
-            val notification = createNotification(processed, total)
+            val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Screenshot Processing")
+                .setContentText(contentText)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setOngoing(ongoing)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .apply {
+                    if (total > 0) {
+                        setProgress(total, processed, false)
+                    } else {
+                        setProgress(0, 0, true)
+                    }
+                }
+                .build()
             notificationManager.notify(NOTIFICATION_ID, notification)
             Log.d(TAG, "Notification updated: $processed/$total")
         } catch (e: Exception) {
             Log.e(TAG, "Error updating notification", e)
         }
-    }
-    
-    private fun loadAllScreenshots(): List<ScreenshotItem> {
-        val projection = arrayOf(
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DISPLAY_NAME
-        )
-        
-        val screenshots = mutableListOf<ScreenshotItem>()
-        
-        try {
-            contentResolver.query(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                projection,
-                MediaStore.Images.Media.DISPLAY_NAME + " LIKE ?",
-                arrayOf("%screenshot%"),
-                "${MediaStore.Images.Media.DATE_ADDED} DESC"
-            )?.use { cursor ->
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idColumn)
-                    val name = cursor.getString(nameColumn)
-                    val contentUri = ContentUris.withAppendedId(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        id
-                    )
-                    screenshots.add(ScreenshotItem(contentUri, name))
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading screenshots", e)
-        }
-        
-        // Limit to 20 screenshots for development purposes
-        return screenshots.take(20)
     }
     
     override fun onDestroy() {

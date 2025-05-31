@@ -233,14 +233,24 @@ fun HomeScreen(
     LaunchedEffect(serviceProcessingState) {
         if (!serviceProcessingState.isProcessing && serviceProcessingState.processed > 0) {
             // Refresh data after processing completes
-            processedCount = repository.getProcessedScreenshotCount()
-            dbScreenshots = repository.getAllScreenshots()
+            Log.d("HomeScreen", "Processing completed, refreshing UI data...")
+            delay(2000) // Longer delay to ensure all database writes are complete
             
-            // Update the screenshots list
-            val screenshotItems = dbScreenshots.map { 
-                ScreenshotItem(it.uri, it.name) 
+            try {
+                processedCount = repository.getProcessedScreenshotCount()
+                dbScreenshots = repository.getAllScreenshots()
+                
+                Log.d("HomeScreen", "After refresh: processedCount=$processedCount, dbScreenshots.size=${dbScreenshots.size}")
+                
+                // Update the screenshots list
+                val screenshotItems = dbScreenshots.map { 
+                    ScreenshotItem(it.uri, it.name) 
+                }
+                onScreenshotsLoaded(screenshotItems)
+                Log.d("HomeScreen", "Refreshed after processing complete: ${dbScreenshots.size} screenshots")
+            } catch (e: Exception) {
+                Log.e("HomeScreen", "Error refreshing after processing complete", e)
             }
-            onScreenshotsLoaded(screenshotItems)
         }
     }
     
@@ -255,8 +265,8 @@ fun HomeScreen(
     }
 
     // Check for unprocessed screenshots in the background
-    LaunchedEffect(hasPermission) {
-        if (hasPermission && !autoProcessingLaunched) {
+    LaunchedEffect(hasPermission, serviceConnected) {
+        if (hasPermission && !autoProcessingLaunched && serviceConnected) {
             coroutineScope.launch {
                 val newScreenshots = repository.checkForNewScreenshots(context)
                 if (newScreenshots.isNotEmpty()) {
@@ -292,6 +302,28 @@ fun HomeScreen(
                     Log.d("HomeScreen", "No new screenshots found during launch check")
                 }
                 autoProcessingLaunched = true
+            }
+        }
+    }
+
+    // Refresh data periodically when processing is active
+    LaunchedEffect(serviceProcessingState.isProcessing) {
+        if (serviceProcessingState.isProcessing) {
+            // Refresh data every 5 seconds while processing
+            while (serviceProcessingState.isProcessing) {
+                delay(5000)
+                try {
+                    processedCount = repository.getProcessedScreenshotCount()
+                    dbScreenshots = repository.getAllScreenshots()
+                    
+                    val screenshotItems = dbScreenshots.map { 
+                        ScreenshotItem(it.uri, it.name) 
+                    }
+                    onScreenshotsLoaded(screenshotItems)
+                    Log.d("HomeScreen", "Refreshed data during processing: ${dbScreenshots.size} screenshots")
+                } catch (e: Exception) {
+                    Log.e("HomeScreen", "Error refreshing data during processing", e)
+                }
             }
         }
     }
@@ -540,6 +572,44 @@ fun HomeScreen(
                     ) {
                         Text("Pause Processing")
                     }
+                }
+                
+                // Manual refresh button
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            try {
+                                Log.d("HomeScreen", "Manual refresh triggered")
+                                processedCount = repository.getProcessedScreenshotCount()
+                                dbScreenshots = repository.getAllScreenshots()
+                                
+                                val screenshotItems = dbScreenshots.map { 
+                                    ScreenshotItem(it.uri, it.name) 
+                                }
+                                onScreenshotsLoaded(screenshotItems)
+                                
+                                Toast.makeText(
+                                    context,
+                                    "Refreshed: ${dbScreenshots.size} screenshots found",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                
+                                Log.d("HomeScreen", "Manual refresh complete: ${dbScreenshots.size} screenshots")
+                            } catch (e: Exception) {
+                                Log.e("HomeScreen", "Error during manual refresh", e)
+                                Toast.makeText(
+                                    context,
+                                    "Error refreshing: ${e.message}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Text("Refresh Screenshots List")
                 }
 
                 // Display either search results or screenshots list

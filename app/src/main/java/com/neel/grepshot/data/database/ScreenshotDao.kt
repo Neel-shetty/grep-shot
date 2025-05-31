@@ -22,7 +22,7 @@ interface ScreenshotDao {
     @Query("SELECT * FROM screenshots WHERE uri = :uriString LIMIT 1")
     suspend fun getScreenshot(uriString: String): ScreenshotWithText?
     
-    @Query("SELECT EXISTS(SELECT * FROM screenshots WHERE uri = :uriString)")
+    @Query("SELECT EXISTS(SELECT 1 FROM screenshots WHERE uri = :uriString)")
     suspend fun isScreenshotProcessed(uriString: String): Boolean
     
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -36,4 +36,7 @@ interface ScreenshotDao {
     
     @Query("SELECT uri FROM screenshots")
     suspend fun getAllProcessedUris(): List<String>
+    
+    @Query("SELECT * FROM screenshots LIMIT 1")
+    suspend fun getMostRecentScreenshot(): ScreenshotWithText?
 }
