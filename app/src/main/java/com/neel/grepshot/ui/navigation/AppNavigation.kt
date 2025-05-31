@@ -18,6 +18,7 @@ import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.repository.ScreenshotRepository
 import com.neel.grepshot.ui.screens.fullscreen.FullScreenImageScreen
 import com.neel.grepshot.ui.screens.home.HomeScreen
+import com.neel.grepshot.ui.screens.settings.SettingsScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -44,7 +45,8 @@ fun AppNavigation(modifier: Modifier = Modifier) {
                     navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
                 },
                 repository = screenshotRepository,
-                onNavigateToSearch = {} // Empty function since search is now in HomeScreen
+                onNavigateToSearch = {}, // Empty function since search is now in HomeScreen
+                onNavigateToSettings = { navController.navigate("settings") } // Add navigation to settings
             )
         }
         
@@ -68,6 +70,11 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             )
         }
         
-        // Search screen removed as it's now integrated into HomeScreen
+        // Add new settings route
+        composable("settings") {
+            SettingsScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
     }
 }

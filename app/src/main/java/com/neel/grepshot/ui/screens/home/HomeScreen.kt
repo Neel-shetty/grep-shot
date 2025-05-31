@@ -1,17 +1,12 @@
 package com.neel.grepshot.ui.screens.home
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.ComponentName
-import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
 import android.os.Build
 import android.os.IBinder
-import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -34,9 +29,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -52,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,11 +57,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -86,11 +79,12 @@ fun HomeScreen(
     onScreenshotClick: (ScreenshotItem) -> Unit,
     repository: ScreenshotRepository,
     onNavigateToSearch: () -> Unit,
+    onNavigateToSettings: () -> Unit,  // New parameter for settings navigation
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     
     // Service connection states
     var processingService by remember { mutableStateOf<ScreenshotProcessingService?>(null) }
@@ -101,41 +95,43 @@ fun HomeScreen(
     
     // Database-loaded screenshots
     var dbScreenshots by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
+    // Loading state for screenshots
+    var isLoading by remember { mutableStateOf(true) }
     
     // Check for notification permission
-    var hasNotificationPermission by remember {
-        mutableStateOf(
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } else {
-                true // Permission not required for Android < 13
-            }
-        )
-    }
+//    var hasNotificationPermission by remember {
+//        mutableStateOf(
+//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+//                ContextCompat.checkSelfPermission(
+//                    context,
+//                    Manifest.permission.POST_NOTIFICATIONS
+//                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+//            } else {
+//                true // Permission not required for Android < 13
+//            }
+//        )
+//    }
     
     // Permission launcher for notification permission
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasNotificationPermission = isGranted
-        if (isGranted) {
-            // Try showing the test notification now that we have permission
-            Toast.makeText(
-                context,
-                "Notification permission granted",
-                Toast.LENGTH_SHORT
-            ).show()
-        } else {
-            Toast.makeText(
-                context,
-                "Notification permission denied. Notifications won't work.",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
+//    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+//        ActivityResultContracts.RequestPermission()
+//    ) { isGranted ->
+//        hasNotificationPermission = isGranted
+//        if (isGranted) {
+//            // Try showing the test notification now that we have permission
+//            Toast.makeText(
+//                context,
+//                "Notification permission granted",
+//                Toast.LENGTH_SHORT
+//            ).show()
+//        } else {
+//            Toast.makeText(
+//                context,
+//                "Notification permission denied. Notifications won't work.",
+//                Toast.LENGTH_LONG
+//            ).show()
+//        }
+//    }
 
     // Service connection
     val serviceConnection = remember {
@@ -209,15 +205,15 @@ fun HomeScreen(
     // Search states
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
-    var processedCount by remember { mutableStateOf(0) }
+    var processedCount by remember { mutableIntStateOf(0) }
     var isSearchActive by rememberSaveable { mutableStateOf(false) }
     
     // Get processed count and load screenshots from database
     LaunchedEffect(Unit) {
-        // Load processed screenshots from the database
+        isLoading = true
         processedCount = repository.getProcessedScreenshotCount()
         dbScreenshots = repository.getAllScreenshots()
-        
+        isLoading = false
         // Convert ScreenshotWithText to ScreenshotItem for compatibility with existing code
         val screenshotItems = dbScreenshots.map { 
             ScreenshotItem(it.uri, it.name) 
@@ -229,14 +225,27 @@ fun HomeScreen(
     LaunchedEffect(serviceProcessingState) {
         if (!serviceProcessingState.isProcessing && serviceProcessingState.processed > 0) {
             // Refresh data after processing completes
-            processedCount = repository.getProcessedScreenshotCount()
-            dbScreenshots = repository.getAllScreenshots()
+            Log.d("HomeScreen", "Processing completed, refreshing UI data...")
+            delay(2000) // Longer delay to ensure all database writes are complete
             
-            // Update the screenshots list
-            val screenshotItems = dbScreenshots.map { 
-                ScreenshotItem(it.uri, it.name) 
+            try {
+                isLoading = true
+                processedCount = repository.getProcessedScreenshotCount()
+                dbScreenshots = repository.getAllScreenshots()
+                isLoading = false
+                
+                Log.d("HomeScreen", "After refresh: processedCount=$processedCount, dbScreenshots.size=${dbScreenshots.size}")
+                
+                // Update the screenshots list
+                val screenshotItems = dbScreenshots.map { 
+                    ScreenshotItem(it.uri, it.name) 
+                }
+                onScreenshotsLoaded(screenshotItems)
+                Log.d("HomeScreen", "Refreshed after processing complete: ${dbScreenshots.size} screenshots")
+            } catch (e: Exception) {
+                Log.e("HomeScreen", "Error refreshing after processing complete", e)
+                isLoading = false
             }
-            onScreenshotsLoaded(screenshotItems)
         }
     }
     
@@ -266,10 +275,86 @@ fun HomeScreen(
         }
     }
 
+    // Check for unprocessed screenshots in the background
+    LaunchedEffect(hasPermission, serviceConnected) {
+        if (hasPermission && !autoProcessingLaunched && serviceConnected) {
+            coroutineScope.launch {
+                val newScreenshots = repository.checkForNewScreenshots(context)
+                if (newScreenshots.isNotEmpty()) {
+                    // Check for notification permission before auto-starting service
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
+                        ContextCompat.checkSelfPermission(
+                            context, 
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        Log.d("HomeScreen", "Auto-processing delayed: notification permission required")
+                        // We won't auto-start service without notification permission
+                        // This will be handled when user manually starts processing
+                    } else {
+                        // Start the background service to process new screenshots
+                        try {
+                            val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                action = "START_PROCESSING"
+                            }
+                            Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
+                            ContextCompat.startForegroundService(context, intent)
+                            
+                            Toast.makeText(
+                                context,
+                                "Found ${newScreenshots.size} new screenshots. Processing in background.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } catch (e: Exception) {
+                            Log.e("HomeScreen", "Error auto-starting service", e)
+                        }
+                    }
+                } else {
+                    Log.d("HomeScreen", "No new screenshots found during launch check")
+                }
+                autoProcessingLaunched = true
+            }
+        }
+    }
+
+    // Refresh data periodically when processing is active
+    LaunchedEffect(serviceProcessingState.isProcessing) {
+        if (serviceProcessingState.isProcessing) {
+            // Refresh data every 5 seconds while processing
+            while (serviceProcessingState.isProcessing) {
+                delay(5000)
+                try {
+                    isLoading = true
+                    processedCount = repository.getProcessedScreenshotCount()
+                    dbScreenshots = repository.getAllScreenshots()
+                    isLoading = false
+                    
+                    val screenshotItems = dbScreenshots.map { 
+                        ScreenshotItem(it.uri, it.name) 
+                    }
+                    onScreenshotsLoaded(screenshotItems)
+                    Log.d("HomeScreen", "Refreshed data during processing: ${dbScreenshots.size} screenshots")
+                } catch (e: Exception) {
+                    Log.e("HomeScreen", "Error refreshing data during processing", e)
+                    isLoading = false
+                }
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GrepShot") }
+                title = { Text("GrepShot") },
+                actions = {
+                    // Add settings button to the top bar
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
+                }
             )
         },
         bottomBar = {
@@ -320,7 +405,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    placeholder = { Text("Search for text in screenshots") },
+                    placeholder = { Text("Search $processedCount screenshots for text") },
                     leadingIcon = {
                         Icon(
                             imageVector = Icons.Default.Search,
@@ -365,6 +450,17 @@ fun HomeScreen(
                         }
                     )
                 )
+                // Show number of results after search
+                if (isSearchActive && searchQuery.isNotEmpty()) {
+                    Text(
+                        text = "${searchResults.size} result${if (searchResults.size == 1) "" else "s"} found",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, bottom = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
             }
 
             if (!hasPermission) {
@@ -408,101 +504,16 @@ fun HomeScreen(
                             Text("${serviceProcessingState.processed}/${serviceProcessingState.total}", 
                                 style = MaterialTheme.typography.bodyMedium)
                         }
-                        
+
                         LinearProgressIndicator(
-                            progress = (serviceProcessingState.processed.toFloat() / serviceProcessingState.total).coerceIn(0f, 1f),
+                            progress = { (serviceProcessingState.processed.toFloat() / serviceProcessingState.total).coerceIn(0f, 1f) },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 4.dp)
+                                .padding(top = 4.dp),
                         )
                     }
                 }
                 
-                // Buttons for background processing control
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Button to start background processing service
-                    Button(
-                        onClick = {
-                            try {
-                                // Check for notification permission first
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                                    // Request notification permission before starting service
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    Toast.makeText(
-                                        context,
-                                        "Notification permission required for processing updates",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    // Start the foreground service
-                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                        action = "START_PROCESSING"
-                                    }
-                                    Log.d("HomeScreen", "Starting foreground service")
-                                    ContextCompat.startForegroundService(context, intent)
-                                    
-                                    Toast.makeText(
-                                        context,
-                                        "Started background processing (limited to 20 screenshots for dev)",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error starting service", e)
-                                Toast.makeText(
-                                    context,
-                                    "Error starting background processing: ${e.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Process in Background")
-                    }
-                    
-                    // Button to stop processing
-                    Button(
-                        onClick = {
-                            try {
-                                // Stop the processing
-                                val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                    action = "STOP_PROCESSING"
-                                }
-                                context.startService(intent)
-                                
-                                // Also call stopProcessing on the bound service if available
-                                processingService?.stopProcessing()
-                                
-                                Toast.makeText(
-                                    context,
-                                    "Pausing background processing...",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error stopping service", e)
-                                Toast.makeText(
-                                    context,
-                                    "Error stopping background processing: ${e.message}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    ) {
-                        Text("Pause Processing")
-                    }
-                }
-
                 // Display either search results or screenshots list
                 if (isSearchActive && searchQuery.isNotEmpty()) {
                     if (searchResults.isEmpty()) {
@@ -533,6 +544,18 @@ fun HomeScreen(
                             }
                         }
                     }
+                } else if (isLoading) {
+                    // Show loading indicator while loading screenshots
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        LinearProgressIndicator(modifier = Modifier.padding(32.dp))
+                        Text("Loading screenshots...")
+                    }
                 } else if (dbScreenshots.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -543,7 +566,7 @@ fun HomeScreen(
                     ) {
                         Text("No processed screenshots found in database")
                         
-                        // Add processing button if there are no screenshots
+                        // Add processing button if there are no screenshots and not loading
                         Button(
                             onClick = {
                                 try {
