@@ -102,6 +102,8 @@ fun HomeScreen(
     
     // Database-loaded screenshots
     var dbScreenshots by remember { mutableStateOf<List<ScreenshotWithText>>(emptyList()) }
+    // Loading state for screenshots
+    var isLoading by remember { mutableStateOf(true) }
     
     // Check for notification permission
     var hasNotificationPermission by remember {
@@ -218,10 +220,11 @@ fun HomeScreen(
     
     // Get processed count and load screenshots from database
     LaunchedEffect(Unit) {
+        isLoading = true
         processedCount = repository.getProcessedScreenshotCount()
         // Load all screenshots from the database instead of media store
         dbScreenshots = repository.getAllScreenshots()
-        
+        isLoading = false
         // Convert ScreenshotWithText to ScreenshotItem for compatibility with existing code
         val screenshotItems = dbScreenshots.map { 
             ScreenshotItem(it.uri, it.name) 
@@ -237,8 +240,10 @@ fun HomeScreen(
             delay(2000) // Longer delay to ensure all database writes are complete
             
             try {
+                isLoading = true
                 processedCount = repository.getProcessedScreenshotCount()
                 dbScreenshots = repository.getAllScreenshots()
+                isLoading = false
                 
                 Log.d("HomeScreen", "After refresh: processedCount=$processedCount, dbScreenshots.size=${dbScreenshots.size}")
                 
@@ -250,6 +255,7 @@ fun HomeScreen(
                 Log.d("HomeScreen", "Refreshed after processing complete: ${dbScreenshots.size} screenshots")
             } catch (e: Exception) {
                 Log.e("HomeScreen", "Error refreshing after processing complete", e)
+                isLoading = false
             }
         }
     }
@@ -313,8 +319,10 @@ fun HomeScreen(
             while (serviceProcessingState.isProcessing) {
                 delay(5000)
                 try {
+                    isLoading = true
                     processedCount = repository.getProcessedScreenshotCount()
                     dbScreenshots = repository.getAllScreenshots()
+                    isLoading = false
                     
                     val screenshotItems = dbScreenshots.map { 
                         ScreenshotItem(it.uri, it.name) 
@@ -323,6 +331,7 @@ fun HomeScreen(
                     Log.d("HomeScreen", "Refreshed data during processing: ${dbScreenshots.size} screenshots")
                 } catch (e: Exception) {
                     Log.e("HomeScreen", "Error refreshing data during processing", e)
+                    isLoading = false
                 }
             }
         }
@@ -436,6 +445,17 @@ fun HomeScreen(
                         }
                     )
                 )
+                // Show number of results after search
+                if (isSearchActive && searchQuery.isNotEmpty()) {
+                    Text(
+                        text = "${searchResults.size} result${if (searchResults.size == 1) "" else "s"} found",
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 24.dp, bottom = 4.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
             }
 
             if (!hasPermission) {
@@ -489,90 +509,6 @@ fun HomeScreen(
                     }
                 }
                 
-                // // Buttons for background processing control
-                // Row(
-                //     modifier = Modifier
-                //         .fillMaxWidth()
-                //         .padding(horizontal = 16.dp, vertical = 8.dp),
-                //     horizontalArrangement = Arrangement.spacedBy(8.dp)
-                // ) {
-                //     // Button to start background processing service
-                //     Button(
-                //         onClick = {
-                //             try {
-                //                 // Check for notification permission first
-                //                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                //                     // Request notification permission before starting service
-                //                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                //                     Toast.makeText(
-                //                         context,
-                //                         "Notification permission required for processing updates",
-                //                         Toast.LENGTH_LONG
-                //                     ).show()
-                //                 } else {
-                //                     // Start the foreground service
-                //                     val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                //                         action = "START_PROCESSING"
-                //                     }
-                //                     Log.d("HomeScreen", "Starting foreground service")
-                //                     ContextCompat.startForegroundService(context, intent)
-                                    
-                //                     Toast.makeText(
-                //                         context,
-                //                         "Started background processing (limited to 20 screenshots for dev)",
-                //                         Toast.LENGTH_LONG
-                //                     ).show()
-                //                 }
-                //             } catch (e: Exception) {
-                //                 Log.e("HomeScreen", "Error starting service", e)
-                //                 Toast.makeText(
-                //                     context,
-                //                     "Error starting background processing: ${e.message}",
-                //                     Toast.LENGTH_LONG
-                //                 ).show()
-                //             }
-                //         },
-                //         modifier = Modifier.weight(1f)
-                //     ) {
-                //         Text("Process in Background")
-                //     }
-                    
-                //     // Button to stop processing
-                //     Button(
-                //         onClick = {
-                //             try {
-                //                 // Stop the processing
-                //                 val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                //                     action = "STOP_PROCESSING"
-                //                 }
-                //                 context.startService(intent)
-                                
-                //                 // Also call stopProcessing on the bound service if available
-                //                 processingService?.stopProcessing()
-                                
-                //                 Toast.makeText(
-                //                     context,
-                //                     "Pausing background processing...",
-                //                     Toast.LENGTH_SHORT
-                //                 ).show()
-                //             } catch (e: Exception) {
-                //                 Log.e("HomeScreen", "Error stopping service", e)
-                //                 Toast.makeText(
-                //                     context,
-                //                     "Error stopping background processing: ${e.message}",
-                //                     Toast.LENGTH_SHORT
-                //                 ).show()
-                //             }
-                //         },
-                //         modifier = Modifier.weight(1f),
-                //         colors = ButtonDefaults.buttonColors(
-                //             containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                //             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                //         )
-                //     ) {
-                //         Text("Pause Processing")
-                //     }
-                // }
                 // Display either search results or screenshots list
                 if (isSearchActive && searchQuery.isNotEmpty()) {
                     if (searchResults.isEmpty()) {
@@ -603,6 +539,18 @@ fun HomeScreen(
                             }
                         }
                     }
+                } else if (isLoading) {
+                    // Show loading indicator while loading screenshots
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        LinearProgressIndicator(modifier = Modifier.padding(32.dp))
+                        Text("Loading screenshots...")
+                    }
                 } else if (dbScreenshots.isEmpty()) {
                     Column(
                         modifier = Modifier
@@ -613,7 +561,7 @@ fun HomeScreen(
                     ) {
                         Text("No processed screenshots found in database")
                         
-                        // Add processing button if there are no screenshots
+                        // Add processing button if there are no screenshots and not loading
                         Button(
                             onClick = {
                                 try {
