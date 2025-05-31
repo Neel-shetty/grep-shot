@@ -489,129 +489,90 @@ fun HomeScreen(
                     }
                 }
                 
-                // Buttons for background processing control
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Button to start background processing service
-                    Button(
-                        onClick = {
-                            try {
-                                // Check for notification permission first
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
-                                    // Request notification permission before starting service
-                                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                                    Toast.makeText(
-                                        context,
-                                        "Notification permission required for processing updates",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } else {
-                                    // Start the foreground service
-                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                        action = "START_PROCESSING"
-                                    }
-                                    Log.d("HomeScreen", "Starting foreground service")
-                                    ContextCompat.startForegroundService(context, intent)
+                // // Buttons for background processing control
+                // Row(
+                //     modifier = Modifier
+                //         .fillMaxWidth()
+                //         .padding(horizontal = 16.dp, vertical = 8.dp),
+                //     horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // ) {
+                //     // Button to start background processing service
+                //     Button(
+                //         onClick = {
+                //             try {
+                //                 // Check for notification permission first
+                //                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                //                     // Request notification permission before starting service
+                //                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                //                     Toast.makeText(
+                //                         context,
+                //                         "Notification permission required for processing updates",
+                //                         Toast.LENGTH_LONG
+                //                     ).show()
+                //                 } else {
+                //                     // Start the foreground service
+                //                     val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                //                         action = "START_PROCESSING"
+                //                     }
+                //                     Log.d("HomeScreen", "Starting foreground service")
+                //                     ContextCompat.startForegroundService(context, intent)
                                     
-                                    Toast.makeText(
-                                        context,
-                                        "Started background processing (limited to 20 screenshots for dev)",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error starting service", e)
-                                Toast.makeText(
-                                    context,
-                                    "Error starting background processing: ${e.message}",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Process in Background")
-                    }
+                //                     Toast.makeText(
+                //                         context,
+                //                         "Started background processing (limited to 20 screenshots for dev)",
+                //                         Toast.LENGTH_LONG
+                //                     ).show()
+                //                 }
+                //             } catch (e: Exception) {
+                //                 Log.e("HomeScreen", "Error starting service", e)
+                //                 Toast.makeText(
+                //                     context,
+                //                     "Error starting background processing: ${e.message}",
+                //                     Toast.LENGTH_LONG
+                //                 ).show()
+                //             }
+                //         },
+                //         modifier = Modifier.weight(1f)
+                //     ) {
+                //         Text("Process in Background")
+                //     }
                     
-                    // Button to stop processing
-                    Button(
-                        onClick = {
-                            try {
-                                // Stop the processing
-                                val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                    action = "STOP_PROCESSING"
-                                }
-                                context.startService(intent)
+                //     // Button to stop processing
+                //     Button(
+                //         onClick = {
+                //             try {
+                //                 // Stop the processing
+                //                 val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                //                     action = "STOP_PROCESSING"
+                //                 }
+                //                 context.startService(intent)
                                 
-                                // Also call stopProcessing on the bound service if available
-                                processingService?.stopProcessing()
+                //                 // Also call stopProcessing on the bound service if available
+                //                 processingService?.stopProcessing()
                                 
-                                Toast.makeText(
-                                    context,
-                                    "Pausing background processing...",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error stopping service", e)
-                                Toast.makeText(
-                                    context,
-                                    "Error stopping background processing: ${e.message}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    ) {
-                        Text("Pause Processing")
-                    }
-                }
-                
-                // Manual refresh button
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            try {
-                                Log.d("HomeScreen", "Manual refresh triggered")
-                                processedCount = repository.getProcessedScreenshotCount()
-                                dbScreenshots = repository.getAllScreenshots()
-                                
-                                val screenshotItems = dbScreenshots.map { 
-                                    ScreenshotItem(it.uri, it.name) 
-                                }
-                                onScreenshotsLoaded(screenshotItems)
-                                
-                                Toast.makeText(
-                                    context,
-                                    "Refreshed: ${dbScreenshots.size} screenshots found",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                
-                                Log.d("HomeScreen", "Manual refresh complete: ${dbScreenshots.size} screenshots")
-                            } catch (e: Exception) {
-                                Log.e("HomeScreen", "Error during manual refresh", e)
-                                Toast.makeText(
-                                    context,
-                                    "Error refreshing: ${e.message}",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                ) {
-                    Text("Refresh Screenshots List")
-                }
-
+                //                 Toast.makeText(
+                //                     context,
+                //                     "Pausing background processing...",
+                //                     Toast.LENGTH_SHORT
+                //                 ).show()
+                //             } catch (e: Exception) {
+                //                 Log.e("HomeScreen", "Error stopping service", e)
+                //                 Toast.makeText(
+                //                     context,
+                //                     "Error stopping background processing: ${e.message}",
+                //                     Toast.LENGTH_SHORT
+                //                 ).show()
+                //             }
+                //         },
+                //         modifier = Modifier.weight(1f),
+                //         colors = ButtonDefaults.buttonColors(
+                //             containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                //             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                //         )
+                //     ) {
+                //         Text("Pause Processing")
+                //     }
+                // }
                 // Display either search results or screenshots list
                 if (isSearchActive && searchQuery.isNotEmpty()) {
                     if (searchResults.isEmpty()) {
