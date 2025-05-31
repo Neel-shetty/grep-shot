@@ -230,6 +230,62 @@ class ScreenshotRepository(private val context: Context) {
         }
     }
     
+    // Import screenshots data from JSON file using Storage Access Framework
+    suspend fun importScreenshotsData(fileUri: Uri): ImportResult = withContext(Dispatchers.IO) {
+        try {
+            // Read JSON data from the selected file
+            val jsonString = context.contentResolver.openInputStream(fileUri)?.use { inputStream ->
+                inputStream.bufferedReader().use { reader ->
+                    reader.readText()
+                }
+            } ?: throw IllegalStateException("Failed to read file")
+            
+            // Parse JSON array
+            val jsonArray = JSONArray(jsonString)
+            var importedCount = 0
+            var skippedCount = 0
+            var errorCount = 0
+            
+            // Process each item in the JSON array
+            for (i in 0 until jsonArray.length()) {
+                try {
+                    val jsonObject = jsonArray.getJSONObject(i)
+                    val uriString = jsonObject.getString("path")
+                    val name = jsonObject.getString("name")
+                    val extractedText = jsonObject.getString("text")
+                    
+                    val uri = Uri.parse(uriString)
+                    
+                    // Check if screenshot already exists in database
+                    if (!isScreenshotProcessed(uri)) {
+                        // Add to database
+                        addScreenshotWithText(uri, name, extractedText)
+                        importedCount++
+                        Log.d("ScreenshotRepo", "Imported: $name")
+                    } else {
+                        skippedCount++
+                        Log.d("ScreenshotRepo", "Skipped (already exists): $name")
+                    }
+                } catch (e: Exception) {
+                    errorCount++
+                    Log.e("ScreenshotRepo", "Error importing item $i: ${e.message}", e)
+                }
+            }
+            
+            Log.d("ScreenshotRepo", "Import completed: $importedCount imported, $skippedCount skipped, $errorCount errors")
+            
+            return@withContext ImportResult(
+                totalItems = jsonArray.length(),
+                importedCount = importedCount,
+                skippedCount = skippedCount,
+                errorCount = errorCount
+            )
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Import error: ${e.message}", e)
+            throw e
+        }
+    }
+    
     // Legacy export method for backwards compatibility (deprecated)
     @Deprecated("Use exportScreenshotsData(Uri) instead")
     suspend fun exportScreenshotsData(): ExportResult = withContext(Dispatchers.IO) {
@@ -291,5 +347,12 @@ class ScreenshotRepository(private val context: Context) {
         val absolutePath: String,
         val itemCount: Int,
         val uri: Uri
+    )
+    
+    data class ImportResult(
+        val totalItems: Int,
+        val importedCount: Int,
+        val skippedCount: Int,
+        val errorCount: Int
     )
 }

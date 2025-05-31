@@ -69,6 +69,11 @@ fun SettingsScreen(
     var exportError by remember { mutableStateOf<String?>(null) }
     var selectedDirectoryUri by remember { mutableStateOf<Uri?>(null) }
     
+    // Import-related states
+    var isImporting by remember { mutableStateOf(false) }
+    var importSuccess by remember { mutableStateOf<String?>(null) }
+    var importError by remember { mutableStateOf<String?>(null) }
+    
     // Directory picker launcher for Storage Access Framework
     val directoryPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -86,6 +91,20 @@ fun SettingsScreen(
             exportScreenshotsData(repository, uri, coroutineScope) { success, message ->
                 isExporting = false
                 if (success) exportSuccess = message else exportError = message
+            }
+        }
+    }
+    
+    // File picker launcher for import
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            // Start import process
+            isImporting = true
+            importScreenshotsData(repository, uri, coroutineScope) { success, message ->
+                isImporting = false
+                if (success) importSuccess = message else importError = message
             }
         }
     }
@@ -118,6 +137,40 @@ fun SettingsScreen(
             text = { Text(exportError!!) },
             confirmButton = {
                 TextButton(onClick = { exportError = null }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+    
+    // Import completed dialog
+    if (importSuccess != null) {
+        AlertDialog(
+            onDismissRequest = { importSuccess = null },
+            title = { Text("Import Successful") },
+            text = { Text(importSuccess!!) },
+            confirmButton = {
+                TextButton(onClick = { importSuccess = null }) {
+                    Text("OK")
+                }
+            },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Import Success"
+                )
+            }
+        )
+    }
+    
+    // Import error dialog
+    if (importError != null) {
+        AlertDialog(
+            onDismissRequest = { importError = null },
+            title = { Text("Import Failed") },
+            text = { Text(importError!!) },
+            confirmButton = {
+                TextButton(onClick = { importError = null }) {
                     Text("OK")
                 }
             }
@@ -236,6 +289,51 @@ fun SettingsScreen(
                 }
             }
             
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text(
+                        text = "Import Screenshots Data",
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    
+                    Text(
+                        text = "Select a JSON file to import screenshot text data into the database",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Button(
+                        onClick = {
+                            // Launch file picker for JSON files
+                            filePickerLauncher.launch(arrayOf("application/json", "text/plain"))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        enabled = !isImporting
+                    ) {
+                        if (isImporting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.padding(end = 8.dp),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                strokeWidth = 2.dp
+                            )
+                            Text("Importing...")
+                        } else {
+                            Text("Choose File & Import")
+                        }
+                    }
+                }
+            }
+            
             Spacer(modifier = Modifier.height(16.dp))
             
             // About Section
@@ -344,6 +442,34 @@ private fun exportScreenshotsData(
             onComplete(true, "Data exported successfully to:\n${exportResult.absolutePath}\n\nTotal items exported: ${exportResult.itemCount}")
         } catch (e: Exception) {
             onComplete(false, "Export failed: ${e.message}")
+        }
+    }
+}
+
+private fun importScreenshotsData(
+    repository: ScreenshotRepository,
+    fileUri: Uri,
+    coroutineScope: kotlinx.coroutines.CoroutineScope,
+    onComplete: (Boolean, String) -> Unit
+) {
+    coroutineScope.launch {
+        try {
+            // Call repository function for import with the selected file
+            val importResult = repository.importScreenshotsData(fileUri)
+            val message = buildString {
+                appendLine("Import completed successfully!")
+                appendLine("Total items in file: ${importResult.totalItems}")
+                appendLine("Successfully imported: ${importResult.importedCount}")
+                if (importResult.skippedCount > 0) {
+                    appendLine("Skipped (already exists): ${importResult.skippedCount}")
+                }
+                if (importResult.errorCount > 0) {
+                    appendLine("Errors: ${importResult.errorCount}")
+                }
+            }
+            onComplete(true, message)
+        } catch (e: Exception) {
+            onComplete(false, "Import failed: ${e.message}")
         }
     }
 }
