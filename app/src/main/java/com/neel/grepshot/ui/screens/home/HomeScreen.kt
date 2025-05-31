@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -85,6 +86,7 @@ fun HomeScreen(
     onScreenshotClick: (ScreenshotItem) -> Unit,
     repository: ScreenshotRepository,
     onNavigateToSearch: () -> Unit,
+    onNavigateToSettings: () -> Unit,  // New parameter for settings navigation
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -297,7 +299,16 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("GrepShot") }
+                title = { Text("GrepShot") },
+                actions = {
+                    // Add settings button to the top bar
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings"
+                        )
+                    }
+                }
             )
         },
         bottomBar = {

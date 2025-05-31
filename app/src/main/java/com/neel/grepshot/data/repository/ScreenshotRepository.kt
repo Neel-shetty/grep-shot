@@ -2,9 +2,13 @@ package com.neel.grepshot.data.repository
 
 import android.content.ContentUris
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import androidx.core.content.FileProvider
+import androidx.documentfile.provider.DocumentFile
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -14,8 +18,14 @@ import com.neel.grepshot.data.model.ScreenshotWithText
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
-class ScreenshotRepository(context: Context) {
+class ScreenshotRepository(private val context: Context) {
     private val screenshotDao = AppDatabase.getDatabase(context).screenshotDao()
     
     // Get the total count of processed screenshots
@@ -171,4 +181,115 @@ class ScreenshotRepository(context: Context) {
             return emptyList()
         }
     }
+    
+    // Export screenshots data as JSON using Storage Access Framework
+    suspend fun exportScreenshotsData(directoryUri: Uri): ExportResult = withContext(Dispatchers.IO) {
+        // Get all screenshots from database
+        val screenshots = getAllScreenshots()
+        
+        // Create JSON structure
+        val jsonArray = JSONArray()
+        
+        screenshots.forEach { screenshot ->
+            val jsonObject = JSONObject().apply {
+                put("path", screenshot.uri.toString())
+                put("name", screenshot.name)
+                put("text", screenshot.extractedText)
+            }
+            jsonArray.put(jsonObject)
+        }
+        
+        // Create a timestamp for the filename
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val fileName = "grepshot_export_$timestamp.json"
+        
+        try {
+            // Create DocumentFile from the user-selected directory
+            val directory = DocumentFile.fromTreeUri(context, directoryUri)
+                ?: throw IllegalArgumentException("Invalid directory URI")
+            
+            // Create the export file in the selected directory
+            val exportFile = directory.createFile("application/json", fileName)
+                ?: throw IllegalStateException("Failed to create export file")
+            
+            // Write JSON data to the file using content resolver
+            context.contentResolver.openOutputStream(exportFile.uri)?.use { outputStream ->
+                outputStream.write(jsonArray.toString(2).toByteArray())
+            } ?: throw IllegalStateException("Failed to open output stream")
+            
+            Log.d("ScreenshotRepo", "Exported ${screenshots.size} items to ${exportFile.name}")
+            
+            return@withContext ExportResult(
+                absolutePath = exportFile.name ?: fileName,
+                itemCount = screenshots.size,
+                uri = exportFile.uri
+            )
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Export error: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    // Legacy export method for backwards compatibility (deprecated)
+    @Deprecated("Use exportScreenshotsData(Uri) instead")
+    suspend fun exportScreenshotsData(): ExportResult = withContext(Dispatchers.IO) {
+        // Get all screenshots from database
+        val screenshots = getAllScreenshots()
+        
+        // Create JSON structure
+        val jsonArray = JSONArray()
+        
+        screenshots.forEach { screenshot ->
+            val jsonObject = JSONObject().apply {
+                put("path", screenshot.uri.toString())
+                put("name", screenshot.name)
+                put("text", screenshot.extractedText)
+            }
+            jsonArray.put(jsonObject)
+        }
+        
+        // Create a timestamp for the filename
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        
+        // Get the Downloads directory
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!downloadsDir.exists()) {
+            downloadsDir.mkdirs()
+        }
+        
+        // Create the export file
+        val exportFile = File(downloadsDir, "grepshot_export_$timestamp.json")
+        
+        try {
+            // Write the JSON data to the file
+            exportFile.writeText(jsonArray.toString(2))
+            
+            // Create content URI for the file to make it available to other apps
+            val fileUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider", 
+                exportFile
+            )
+            
+            // Grant temporary permissions for the URI
+            context.grantUriPermission(
+                context.packageName, 
+                fileUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            
+            Log.d("ScreenshotRepo", "Exported ${screenshots.size} items to ${exportFile.absolutePath}")
+            
+            return@withContext ExportResult(exportFile.absolutePath, screenshots.size, fileUri)
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Export error: ${e.message}", e)
+            throw e
+        }
+    }
+    
+    data class ExportResult(
+        val absolutePath: String,
+        val itemCount: Int,
+        val uri: Uri
+    )
 }
