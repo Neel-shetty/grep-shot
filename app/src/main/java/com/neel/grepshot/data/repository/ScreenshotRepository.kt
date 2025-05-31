@@ -36,7 +36,13 @@ class ScreenshotRepository(private val context: Context) {
     // Add a new processed screenshot
     suspend fun addScreenshotWithText(uri: Uri, name: String, text: String) {
         try {
-            val screenshot = ScreenshotWithText(uri, name, text)
+            val createdAt = getFileCreationTime(uri)
+            val screenshot = ScreenshotWithText(
+                uri = uri, 
+                name = name, 
+                extractedText = text,
+                createdAt = createdAt
+            )
             Log.d("ScreenshotRepo", "Attempting to insert screenshot: $name with URI: $uri")
             screenshotDao.insertScreenshot(screenshot)
             Log.d("ScreenshotRepo", "Successfully inserted screenshot: $name with text length: ${text.length}")
@@ -84,7 +90,6 @@ class ScreenshotRepository(private val context: Context) {
                     Log.d("ScreenshotRepo", "Batch processed: ${screenshot.name}")
                 } catch (e: Exception) {
                     Log.e("TextRecognition", "Error creating InputImage for ${screenshot.name}", e)
-                    addScreenshotWithText(screenshot.uri, screenshot.name, "")
                 }
             }
         }
@@ -341,6 +346,24 @@ class ScreenshotRepository(private val context: Context) {
         return screenshots
     }
     
+    // Helper function to get file creation time from URI
+    private fun getFileCreationTime(uri: Uri): Long {
+        return try {
+            val projection = arrayOf(MediaStore.Images.Media.DATE_ADDED)
+            context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val dateAddedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
+                    cursor.getLong(dateAddedColumn) * 1000 // Convert seconds to milliseconds
+                } else {
+                    0L // Unix epoch fallback
+                }
+            } ?: 0L // Unix epoch fallback
+        } catch (e: Exception) {
+            Log.w("ScreenshotRepo", "Could not get file creation time for $uri, using Unix epoch", e)
+            0L // Unix epoch fallback
+        }
+    }
+    
     // Export screenshots data as JSON using Storage Access Framework
     suspend fun exportScreenshotsData(directoryUri: Uri): ExportResult = withContext(Dispatchers.IO) {
         // Get all screenshots from database
@@ -417,8 +440,16 @@ class ScreenshotRepository(private val context: Context) {
                     
                     // Check if screenshot already exists in database
                     if (!isScreenshotProcessed(uri)) {
-                        // Add to database
-                        addScreenshotWithText(uri, name, extractedText)
+                        // Get the actual file creation time from filesystem
+                        val createdAt = getFileCreationTime(uri)
+                        
+                        val screenshot = ScreenshotWithText(
+                            uri = uri,
+                            name = name,
+                            extractedText = extractedText,
+                            createdAt = createdAt
+                        )
+                        screenshotDao.insertScreenshot(screenshot)
                         importedCount++
                         Log.d("ScreenshotRepo", "Imported: $name")
                     } else {

@@ -7,7 +7,6 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import androidx.room.TypeConverters
 import com.neel.grepshot.data.database.UriConverter
-// @Entity(tableName = "screenshots")
 
 @Entity(
     tableName = "screenshots",
@@ -25,5 +24,8 @@ data class ScreenshotWithText(
     val name: String,
     
     @ColumnInfo(name = "extracted_text")
-    val extractedText: String
+    val extractedText: String,
+    
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long = System.currentTimeMillis()
 )
