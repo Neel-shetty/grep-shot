@@ -19,6 +19,7 @@ import com.neel.grepshot.data.repository.ScreenshotRepository
 import com.neel.grepshot.ui.screens.fullscreen.FullScreenImageScreen
 import com.neel.grepshot.ui.screens.home.HomeScreen
 import com.neel.grepshot.ui.screens.settings.SettingsScreen
+import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,14 +39,12 @@ fun AppNavigation(modifier: Modifier = Modifier) {
     ) {
         composable("home") {
             HomeScreen(
-                screenshots = screenshots,
                 onScreenshotsLoaded = { screenshots = it },
                 onScreenshotClick = { screenshot ->
                     val encodedUri = Uri.encode(screenshot.uri.toString())
                     navController.navigate("fullscreen/$encodedUri/${screenshot.name}")
                 },
                 repository = screenshotRepository,
-                onNavigateToSearch = {}, // Empty function since search is now in HomeScreen
                 onNavigateToSettings = { navController.navigate("settings") } // Add navigation to settings
             )
         }
@@ -60,7 +59,7 @@ fun AppNavigation(modifier: Modifier = Modifier) {
             val encodedUri = backStackEntry.arguments?.getString("uri") ?: ""
             val name = backStackEntry.arguments?.getString("name") ?: ""
             
-            val uri = Uri.parse(Uri.decode(encodedUri))
+            val uri = Uri.decode(encodedUri).toUri()
             val screenshotItem = ScreenshotItem(uri, name)
             
             FullScreenImageScreen(

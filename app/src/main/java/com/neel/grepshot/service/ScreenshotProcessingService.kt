@@ -1,22 +1,14 @@
 package com.neel.grepshot.service
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
-import android.content.ContentUris
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Binder
-import android.os.Build
 import android.os.IBinder
-import android.provider.MediaStore
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.neel.grepshot.MainActivity
 import com.neel.grepshot.R
-import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.repository.ScreenshotRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -95,58 +87,23 @@ class ScreenshotProcessingService : Service() {
         return START_STICKY
     }
     
-    // Function to start the background processing of all screenshots
-    private fun startProcessingInBackground() {
-        // ...existing code...
-    }
-    
     // Public method for the UI to stop processing
     fun stopProcessing() {
         // ...existing code...
     }
     
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Screenshot Processing",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "Used for processing screenshots in the background"
-            }
-            
-            val notificationManager = getSystemService(NotificationManager::class.java)
-            notificationManager.createNotificationChannel(channel)
-            Log.d(TAG, "Notification channel created")
+        val channel = NotificationChannel(
+            CHANNEL_ID,
+            "Screenshot Processing",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Used for processing screenshots in the background"
         }
-    }
-    
-    private fun createNotification(processed: Int, total: Int): Notification {
-        val pendingIntent: PendingIntent = Intent(this, MainActivity::class.java).let { notificationIntent ->
-            PendingIntent.getActivity(
-                this, 0, notificationIntent, 
-                PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        
-        // Use our custom notification icon
-        val iconResId = R.drawable.ic_notification
-        
-        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Processing Screenshots")
-            .setContentText("$processed of $total screenshots processed")
-            .setSmallIcon(iconResId)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-        
-        if (total > 0) {
-            builder.setProgress(total, processed, false)
-        } else {
-            builder.setProgress(0, 0, true) // Indeterminate progress
-        }
-        
-        return builder.build()
+
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
+        Log.d(TAG, "Notification channel created")
     }
     
     private suspend fun processScreenshots() {
@@ -237,7 +194,7 @@ class ScreenshotProcessingService : Service() {
             )
         } finally {
             // Clean up
-            stopForeground(true)
+            stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
     }

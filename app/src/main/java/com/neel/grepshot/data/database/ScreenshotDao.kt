@@ -6,7 +6,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import com.neel.grepshot.data.model.ScreenshotWithText
-import android.net.Uri
 
 @Dao
 interface ScreenshotDao {

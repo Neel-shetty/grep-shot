@@ -74,11 +74,9 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    screenshots: List<ScreenshotItem>,
     onScreenshotsLoaded: (List<ScreenshotItem>) -> Unit,
     onScreenshotClick: (ScreenshotItem) -> Unit,
     repository: ScreenshotRepository,
-    onNavigateToSearch: () -> Unit,
     onNavigateToSettings: () -> Unit,  // New parameter for settings navigation
     modifier: Modifier = Modifier
 ) {
