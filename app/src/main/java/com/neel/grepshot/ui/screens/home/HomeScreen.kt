@@ -99,41 +99,6 @@ fun HomeScreen(
     // Track whether auto-processing has been launched to prevent multiple launches
     var autoProcessingLaunched by remember { mutableStateOf(false) }
     
-    // Check for notification permission
-//    var hasNotificationPermission by remember {
-//        mutableStateOf(
-//            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-//                ContextCompat.checkSelfPermission(
-//                    context,
-//                    Manifest.permission.POST_NOTIFICATIONS
-//                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-//            } else {
-//                true // Permission not required for Android < 13
-//            }
-//        )
-//    }
-    
-    // Permission launcher for notification permission
-//    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-//        ActivityResultContracts.RequestPermission()
-//    ) { isGranted ->
-//        hasNotificationPermission = isGranted
-//        if (isGranted) {
-//            // Try showing the test notification now that we have permission
-//            Toast.makeText(
-//                context,
-//                "Notification permission granted",
-//                Toast.LENGTH_SHORT
-//            ).show()
-//        } else {
-//            Toast.makeText(
-//                context,
-//                "Notification permission denied. Notifications won't work.",
-//                Toast.LENGTH_LONG
-//            ).show()
-//        }
-//    }
-
     // Service connection
     val serviceConnection = remember {
         object : ServiceConnection {
