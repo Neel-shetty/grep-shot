@@ -215,6 +215,28 @@ fun HomeScreen(
         }
     }
     
+    // Refresh UI images every time the progress bar moves (when processed count changes)
+    LaunchedEffect(serviceProcessingState.processed) {
+        if (serviceProcessingState.isProcessing && serviceProcessingState.processed > 0) {
+            // Refresh data immediately when a new screenshot is processed
+            Log.d("HomeScreen", "Progress updated: ${serviceProcessingState.processed}/${serviceProcessingState.total}, refreshing UI...")
+            
+            try {
+                processedCount = repository.getProcessedScreenshotCount()
+                dbScreenshots = repository.getAllScreenshots()
+                
+                // Update the screenshots list
+                val screenshotItems = dbScreenshots.map { 
+                    ScreenshotItem(it.uri, it.name) 
+                }
+                onScreenshotsLoaded(screenshotItems)
+                Log.d("HomeScreen", "UI refreshed on progress update: ${dbScreenshots.size} screenshots")
+            } catch (e: Exception) {
+                Log.e("HomeScreen", "Error refreshing UI on progress update", e)
+            }
+        }
+    }
+    
     // Periodic refresh while processing is happening
     LaunchedEffect(serviceProcessingState.isProcessing) {
         if (serviceProcessingState.isProcessing) {
