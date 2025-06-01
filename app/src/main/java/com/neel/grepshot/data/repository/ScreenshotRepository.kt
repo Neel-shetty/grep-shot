@@ -199,51 +199,51 @@ class ScreenshotRepository(private val context: Context) {
         return screenshotDao.getAllProcessedUris()
     }
     
-    // Check for new screenshots using optimized comparison strategy
-    suspend fun checkForNewScreenshots(context: Context, limit: Int = 20): List<ScreenshotItem> {
-        Log.d("ScreenshotRepo", "Checking for new screenshots")
+    // Check for new screenshots using createdAt timestamp
+    suspend fun checkForNewScreenshots(context: Context, limit: Int = 20, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
+        Log.d("ScreenshotRepo", "Checking for new screenshots using createdAt timestamp")
         
         try {
             // Get the most recent screenshot from the database
             val mostRecentProcessed = screenshotDao.getMostRecentScreenshot()
             
-            // Get the latest screenshot from device
-            val latestFromDevice = getLatestScreenshotFromDevice(context)
-            
-            if (latestFromDevice == null) {
-                Log.d("ScreenshotRepo", "No screenshots found on device")
-                return emptyList()
-            }
-            
             // If no screenshots in database, process the latest ones up to limit
             if (mostRecentProcessed == null) {
                 Log.d("ScreenshotRepo", "No screenshots in database, getting latest $limit")
-                return getLatestScreenshotsFromDevice(context, limit)
+                return getLatestScreenshotsFromDevice(context, limit, additionalFolders)
             }
             
-            // If the latest screenshot from device matches the most recent in database, no new screenshots
-            if (latestFromDevice.uri.toString() == mostRecentProcessed.uri.toString()) {
-                Log.d("ScreenshotRepo", "No new screenshots found")
-                return emptyList()
-            }
+            val lastProcessedTime = mostRecentProcessed.createdAt
+            Log.d("ScreenshotRepo", "Last processed screenshot time: $lastProcessedTime")
             
-            // Find where the database screenshot appears in the device list using exponential search
-            var batchSize = 10
+            // Get screenshots from device that are newer than the last processed one
+            val newScreenshots = getScreenshotsNewerThan(context, lastProcessedTime, limit, additionalFolders, mostRecentProcessed)
+            
+            Log.d("ScreenshotRepo", "Found ${newScreenshots.size} new screenshots")
+            return newScreenshots
+            
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Error checking for new screenshots", e)
+            return emptyList()
+        }
+    }
+    
+    // Helper function to get screenshots newer than a specific timestamp
+    private fun getScreenshotsNewerThan(context: Context, timestamp: Long, limit: Int, additionalFolders: List<Uri> = emptyList(), mostRecentProcessed: ScreenshotWithText): List<ScreenshotItem> {
+        try {
+            // Start with a small batch and increase if needed
+            var batchSize = limit * 2
             var foundMatch = false
             var newScreenshots = mutableListOf<ScreenshotItem>()
             
-            while (!foundMatch && batchSize <= 100000) { // Cap at 1000 to prevent infinite loop
-                Log.d("ScreenshotRepo", "Searching in batch of $batchSize screenshots")
+            while (!foundMatch && batchSize <= 500) { // Reasonable upper limit
+                val recentScreenshots = getLatestScreenshotsFromDevice(context, batchSize, additionalFolders)
                 
-                val recentScreenshots = getLatestScreenshotsFromDevice(context, batchSize)
-                
-                // Look for the most recent processed screenshot in this batch
-                val matchIndex = recentScreenshots.indexOfFirst { 
-                    it.uri.toString() == mostRecentProcessed.uri.toString()
-                }
+                // Find the index of the most recent processed screenshot in the device list
+                val matchIndex = recentScreenshots.indexOfFirst { it.uri == mostRecentProcessed.uri }
                 
                 if (matchIndex != -1) {
-                    // Found the match, get all screenshots before this index (newer ones)
+                    // Found the match, take screenshots before this index (more recent ones)
                     newScreenshots = recentScreenshots.take(matchIndex).toMutableList()
                     foundMatch = true
                     Log.d("ScreenshotRepo", "Found match at index $matchIndex, ${newScreenshots.size} new screenshots")
@@ -261,7 +261,7 @@ class ScreenshotRepository(private val context: Context) {
             
             if (!foundMatch) {
                 Log.w("ScreenshotRepo", "Could not find database match in device screenshots, returning latest $limit")
-                newScreenshots = getLatestScreenshotsFromDevice(context, limit).toMutableList()
+                newScreenshots = getLatestScreenshotsFromDevice(context, limit, additionalFolders).toMutableList()
             }
             
             // Limit the result to the specified limit
@@ -279,10 +279,14 @@ class ScreenshotRepository(private val context: Context) {
     }
     
     // Helper function to get the latest screenshot from device
-    private fun getLatestScreenshotFromDevice(context: Context): ScreenshotItem? {
+    private fun getLatestScreenshotFromDevice(context: Context, additionalFolders: List<Uri> = emptyList()): ScreenshotItem? {
+        val allScreenshots = mutableListOf<ScreenshotItem>()
+        
+        // Get from default media store
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DISPLAY_NAME
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.DATE_ADDED
         )
         
         context.contentResolver.query(
@@ -303,20 +307,33 @@ class ScreenshotRepository(private val context: Context) {
                     id
                 )
                 
-                return ScreenshotItem(contentUri, name)
+                allScreenshots.add(ScreenshotItem(contentUri, name))
             }
         }
         
-        return null
+        // Get from additional folders
+        additionalFolders.forEach { folderUri ->
+            try {
+                val folderScreenshots = getScreenshotsFromFolder(context, folderUri, 1)
+                allScreenshots.addAll(folderScreenshots)
+            } catch (e: Exception) {
+                Log.e("ScreenshotRepo", "Error reading from additional folder: $folderUri", e)
+            }
+        }
+        
+        // Return the first screenshot (most recent based on query sort order)
+        return allScreenshots.firstOrNull()
     }
     
     // Helper function to get latest screenshots from device
-    private fun getLatestScreenshotsFromDevice(context: Context, count: Int): List<ScreenshotItem> {
-        val screenshots = mutableListOf<ScreenshotItem>()
+    private fun getLatestScreenshotsFromDevice(context: Context, count: Int, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
+        val allScreenshots = mutableListOf<ScreenshotItem>()
         
+        // Get from default media store
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DISPLAY_NAME
+            MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.DATE_ADDED
         )
         
         context.contentResolver.query(
@@ -329,8 +346,7 @@ class ScreenshotRepository(private val context: Context) {
             val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
             
-            var itemCount = 0
-            while (cursor.moveToNext() && itemCount < count) {
+            while (cursor.moveToNext()) {
                 val id = cursor.getLong(idColumn)
                 val name = cursor.getString(nameColumn)
                 val contentUri = ContentUris.withAppendedId(
@@ -338,9 +354,46 @@ class ScreenshotRepository(private val context: Context) {
                     id
                 )
                 
-                screenshots.add(ScreenshotItem(contentUri, name))
-                itemCount++
+                allScreenshots.add(ScreenshotItem(contentUri, name))
             }
+        }
+        
+        // Get from additional folders
+        additionalFolders.forEach { folderUri ->
+            try {
+                val folderScreenshots = getScreenshotsFromFolder(context, folderUri, count)
+                allScreenshots.addAll(folderScreenshots)
+            } catch (e: Exception) {
+                Log.e("ScreenshotRepo", "Error reading from additional folder: $folderUri", e)
+            }
+        }
+        
+        // Return up to count items (already sorted by query)
+        return allScreenshots.take(count)
+    }
+    
+    // Helper function to get screenshots from a specific folder
+    private fun getScreenshotsFromFolder(context: Context, folderUri: Uri, maxCount: Int): List<ScreenshotItem> {
+        val screenshots = mutableListOf<ScreenshotItem>()
+        
+        try {
+            val folder = DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
+            
+            // List all files in the folder
+            val files = folder.listFiles()
+            
+            files?.forEach { file ->
+                if (file.isFile && file.name?.lowercase()?.contains("screenshot") == true) {
+                    val mimeType = file.type
+                    if (mimeType != null && mimeType.startsWith("image/")) {
+                        screenshots.add(ScreenshotItem(file.uri, file.name ?: "unknown"))
+                        
+                        if (screenshots.size >= maxCount) return@forEach
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Error reading folder: $folderUri", e)
         }
         
         return screenshots
