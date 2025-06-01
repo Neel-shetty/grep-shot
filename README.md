@@ -3,11 +3,11 @@
 ## TODO
 
 - [x] check for new screenshots and only process that
-- [ ] create settings page for selecting folders to add
 - [x] show number of results after search
 - [x] export import data
-- [ ] fix notifications timing, shows now always
-- [ ] show time taken to process
+- [x] fix notifications timing, shows now always
+- [x] show time taken to process
+- [ ] create settings page for selecting folders to add
 
 ### Backlog
 
