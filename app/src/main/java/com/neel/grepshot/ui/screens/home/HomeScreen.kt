@@ -98,6 +98,9 @@ fun HomeScreen(
     // Loading state for screenshots
     var isLoading by remember { mutableStateOf(true) }
     
+    // Track whether auto-processing has been launched to prevent multiple launches
+    var autoProcessingLaunched by remember { mutableStateOf(false) }
+    
     // Check for notification permission
 //    var hasNotificationPermission by remember {
 //        mutableStateOf(
@@ -539,7 +542,8 @@ fun HomeScreen(
                                     onClick = { 
                                         // Convert ScreenshotWithText to ScreenshotItem for navigation
                                         onScreenshotClick(ScreenshotItem(screenshot.uri, screenshot.name))
-                                    }
+                                    },
+                                    searchQuery = searchQuery
                                 )
                             }
                         }
@@ -603,7 +607,8 @@ fun HomeScreen(
                                 screenshot = screenshot,
                                 onClick = { 
                                     onScreenshotClick(ScreenshotItem(screenshot.uri, screenshot.name))
-                                }
+                                },
+                                searchQuery = searchQuery
                             )
                         }
                     }
@@ -617,7 +622,8 @@ fun HomeScreen(
 fun SearchResultCard(
     screenshot: ScreenshotWithText,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    searchQuery: String = ""
 ) {
     Card(
         onClick = onClick,
@@ -643,26 +649,44 @@ fun SearchResultCard(
                     .fillMaxWidth()
                     .padding(8.dp)
             ) {
-                Text(
-                    text = screenshot.name,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                
-                // Show a snippet of the matched text
-                val snippetText = if (screenshot.extractedText.length > 50) {
-                    "${screenshot.extractedText.take(50)}..."
+                // Show extracted text with search query highlighting
+                val displayText = if (searchQuery.isNotEmpty() && screenshot.extractedText.contains(searchQuery, ignoreCase = true)) {
+                    // Find the line containing the search query
+                    val lines = screenshot.extractedText.split('\n')
+                    val matchingLine = lines.find { it.contains(searchQuery, ignoreCase = true) }
+                    
+                    if (matchingLine != null) {
+                        // Show the matching line and the next line if available
+                        val matchingLineIndex = lines.indexOf(matchingLine)
+                        val nextLine = if (matchingLineIndex + 1 < lines.size) lines[matchingLineIndex + 1] else ""
+                        if (nextLine.isNotEmpty()) {
+                            "$matchingLine\n$nextLine"
+                        } else {
+                            matchingLine
+                        }
+                    } else {
+                        // Fallback to truncated text
+                        if (screenshot.extractedText.length > 100) {
+                            "${screenshot.extractedText.take(100)}..."
+                        } else {
+                            screenshot.extractedText
+                        }
+                    }
                 } else {
-                    screenshot.extractedText
+                    // Show truncated text when no search query
+                    if (screenshot.extractedText.length > 100) {
+                        "${screenshot.extractedText.take(100)}..."
+                    } else {
+                        screenshot.extractedText
+                    }
                 }
                 
                 Text(
-                    text = snippetText,
+                    text = displayText,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray,
-                    modifier = Modifier.padding(top = 4.dp)
+                    color = Color.Gray
                 )
             }
         }
