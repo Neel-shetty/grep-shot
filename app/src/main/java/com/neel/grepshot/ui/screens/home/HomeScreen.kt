@@ -454,8 +454,8 @@ fun HomeScreen(
                     }
                 }
             } else {
-                // Service processing state display
-                if (serviceProcessingState.total > 0) {
+                // Service processing state display - only show if processing is active
+                if (serviceProcessingState.total > 0 && serviceProcessingState.isProcessing) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
