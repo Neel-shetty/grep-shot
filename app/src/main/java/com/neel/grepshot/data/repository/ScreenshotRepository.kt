@@ -61,41 +61,6 @@ class ScreenshotRepository(private val context: Context) {
         }
     }
     
-    // Process multiple screenshots at once
-//    suspend fun processScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
-//        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-//
-//        screenshots.forEach { screenshot ->
-//            if (!isScreenshotProcessed(screenshot.uri)) {
-//                try {
-//                    val inputImage = InputImage.fromFilePath(context, screenshot.uri)
-//
-//                    val text = withContext(Dispatchers.IO) {
-//                        suspendCancellableCoroutine<String> { continuation ->
-//                            recognizer.process(inputImage)
-//                                .addOnSuccessListener { visionText ->
-//                                    if (continuation.isActive) {
-//                                        continuation.resume(visionText.text) {}
-//                                    }
-//                                }
-//                                .addOnFailureListener { e ->
-//                                    Log.e("TextRecognition", "Error processing batch image", e)
-//                                    if (continuation.isActive) {
-//                                        continuation.resume("") {}
-//                                    }
-//                                }
-//                        }
-//                    }
-//
-//                    addScreenshotWithText(screenshot.uri, screenshot.name, text)
-//                    Log.d("ScreenshotRepo", "Batch processed: ${screenshot.name}")
-//                } catch (e: Exception) {
-//                    Log.e("TextRecognition", "Error creating InputImage for ${screenshot.name}", e)
-//                }
-//            }
-//        }
-//    }
-    
     // Search for screenshots containing the query text
     suspend fun searchScreenshots(query: String): List<ScreenshotWithText> {
         if (query.isEmpty()) return emptyList()
@@ -122,44 +87,30 @@ class ScreenshotRepository(private val context: Context) {
         screenshotDao.clearAllScreenshots()
     }
     
-    // Get count of processed screenshots from a specific list
-//    suspend fun getProcessedCount(screenshots: List<ScreenshotItem>): Int {
-//        var count = 0
-//        for (screenshot in screenshots) {
-//            if (isScreenshotProcessed(screenshot.uri)) {
-//                count++
-//            }
-//        }
-//        return count
-//    }
-//
-//    // Find unprocessed screenshots from a list
-//    suspend fun findUnprocessedScreenshots(screenshots: List<ScreenshotItem>): List<ScreenshotItem> {
-//        val processedUris = screenshotDao.getAllProcessedUris()
-//        return screenshots.filter { screenshot ->
-//            !processedUris.contains(screenshot.uri.toString())
-//        }
-//    }
-    
-    // Process only unprocessed screenshots
-    suspend fun processNewScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
-        Log.d("ScreenshotRepo", "processNewScreenshots called with ${screenshots.size} screenshots")
+    // Process new screenshots with OCR
+    suspend fun processNewScreenshots(context: Context, screenshots: List<ScreenshotItem>, onProgress: ((Int, Int) -> Unit)? = null) {
+        Log.d("ScreenshotRepo", "Starting to process ${screenshots.size} screenshots")
         
-        // Since checkForNewScreenshots already filters for unprocessed screenshots,
-        // we don't need to filter again here. Just process all the provided screenshots.
         if (screenshots.isNotEmpty()) {
-            Log.d("ScreenshotRepo", "Processing ${screenshots.size} new screenshots")
-            
-            val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-            
-            screenshots.forEach { screenshot ->
+            screenshots.forEachIndexed { index, screenshot ->
                 try {
-                    Log.d("ScreenshotRepo", "Processing screenshot: ${screenshot.name}")
-                    val inputImage = InputImage.fromFilePath(context, screenshot.uri)
+                    Log.d("ScreenshotRepo", "Processing screenshot ${index + 1}/${screenshots.size}: ${screenshot.name}")
                     
-                    val text = withContext(Dispatchers.IO) {
-                        suspendCancellableCoroutine<String> { continuation ->
-                            recognizer.process(inputImage)
+                    // Update progress before processing each screenshot
+                    onProgress?.invoke(index, screenshots.size)
+                    
+                    // Check if already processed
+                    if (isScreenshotProcessed(screenshot.uri)) {
+                        Log.d("ScreenshotRepo", "Screenshot already processed: ${screenshot.name}")
+                        return@forEachIndexed
+                    }
+                    
+                    // Extract text using OCR
+                    val text = suspendCancellableCoroutine<String> { continuation ->
+                        try {
+                            val inputImage = InputImage.fromFilePath(context, screenshot.uri)
+                            
+                            TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS).process(inputImage)
                                 .addOnSuccessListener { visionText ->
                                     if (continuation.isActive) {
                                         Log.d("ScreenshotRepo", "OCR completed for ${screenshot.name}, text length: ${visionText.text.length}")
@@ -172,6 +123,11 @@ class ScreenshotRepository(private val context: Context) {
                                         continuation.resume("") { cause, _, _ -> }
                                     }
                                 }
+                        } catch (e: Exception) {
+                            Log.e("ScreenshotRepo", "Error processing image for OCR: ${screenshot.name}", e)
+                            if (continuation.isActive) {
+                                continuation.resume("") { cause, _, _ -> }
+                            }
                         }
                     }
                     
@@ -182,6 +138,9 @@ class ScreenshotRepository(private val context: Context) {
                     } catch (dbError: Exception) {
                         Log.e("ScreenshotRepo", "Database insertion failed for ${screenshot.name}", dbError)
                     }
+                    
+                    // Update progress after processing each screenshot
+                    onProgress?.invoke(index + 1, screenshots.size)
                     
                 } catch (e: Exception) {
                     Log.e("ScreenshotRepo", "Error processing ${screenshot.name}", e)
@@ -195,11 +154,6 @@ class ScreenshotRepository(private val context: Context) {
         }
     }
     
-//    // Get all processed URIs from the database
-//    suspend fun getAllProcessedUris(): List<String> {
-//        return screenshotDao.getAllProcessedUris()
-//    }
-//
     // Check for new screenshots using createdAt timestamp
     suspend fun checkForNewScreenshots(context: Context, limit: Int = 20, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
         Log.d("ScreenshotRepo", "Checking for new screenshots using createdAt timestamp")

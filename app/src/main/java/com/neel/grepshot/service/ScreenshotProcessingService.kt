@@ -131,12 +131,29 @@ class ScreenshotProcessingService : Service() {
             
             updateNotification("Processing screenshots...", 0, unprocessedScreenshots.size, true)
             
-            // Process screenshots using the repository method
+            // Process screenshots using the repository method with progress callback
             try {
                 Log.d(TAG, "About to call repository.processNewScreenshots with ${unprocessedScreenshots.size} screenshots")
                 
-                // Process all new screenshots at once
-                repository.processNewScreenshots(this, unprocessedScreenshots)
+                // Process screenshots with incremental progress updates
+                repository.processNewScreenshots(this, unprocessedScreenshots) { processed, total ->
+                    // Update processing state for each screenshot completed
+                    _processingProgress.value = ProcessingState(
+                        total = total,
+                        processed = processed,
+                        isProcessing = true
+                    )
+                    
+                    // Update notification with current progress
+                    updateNotification(
+                        "Processing screenshots... ($processed/$total)",
+                        processed,
+                        total,
+                        true
+                    )
+                    
+                    Log.d(TAG, "Progress update: $processed/$total screenshots processed")
+                }
                 
                 Log.d(TAG, "Repository.processNewScreenshots completed")
                 
