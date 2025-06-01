@@ -110,6 +110,9 @@ class ScreenshotProcessingService : Service() {
         try {
             Log.d(TAG, "Starting screenshot processing")
             
+            // Record start time for timing
+            val startTime = System.currentTimeMillis()
+            
             // Get unprocessed screenshots
             val unprocessedScreenshots = repository.checkForNewScreenshots(this)
             
@@ -157,6 +160,11 @@ class ScreenshotProcessingService : Service() {
                 
                 Log.d(TAG, "Repository.processNewScreenshots completed")
                 
+                // Calculate processing duration
+                val endTime = System.currentTimeMillis()
+                val durationMs = endTime - startTime
+                val durationText = formatDuration(durationMs)
+                
                 // Update final state
                 _processingProgress.value = ProcessingState(
                     total = unprocessedScreenshots.size,
@@ -166,13 +174,14 @@ class ScreenshotProcessingService : Service() {
                 
                 if (isProcessingActive) {
                     updateNotification(
-                        "Processing complete! Processed ${unprocessedScreenshots.size} screenshots",
+                        "Processing complete! Processed ${unprocessedScreenshots.size} screenshots in $durationText",
                         unprocessedScreenshots.size,
                         unprocessedScreenshots.size,
-                        false
+                        false,
+                        "Processed ${unprocessedScreenshots.size} images in $durationText"
                     )
                     
-                    Log.d(TAG, "Processing completed successfully. Processed ${unprocessedScreenshots.size} screenshots")
+                    Log.d(TAG, "Processing completed successfully. Processed ${unprocessedScreenshots.size} screenshots in $durationText")
                     
                     // Keep notification for a few seconds then remove it
                     delay(3000)
@@ -216,11 +225,23 @@ class ScreenshotProcessingService : Service() {
         }
     }
     
-    private fun updateNotification(contentText: String, processed: Int, total: Int, ongoing: Boolean) {
+    private fun formatDuration(durationMs: Long): String {
+        val seconds = durationMs / 1000
+        val minutes = seconds / 60
+        val hours = minutes / 60
+        
+        return when {
+            hours > 0 -> "${hours}h ${minutes % 60}m"
+            minutes > 0 -> "${minutes}m ${seconds % 60}s"
+            else -> "${seconds}s"
+        }
+    }
+    
+    private fun updateNotification(contentText: String, processed: Int, total: Int, ongoing: Boolean, title: String = "Screenshot Processing") {
         try {
             val notificationManager = getSystemService(NotificationManager::class.java)
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Screenshot Processing")
+                .setContentTitle(title)
                 .setContentText(contentText)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setOngoing(ongoing)
