@@ -24,6 +24,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.core.net.toUri
 
 class ScreenshotRepository(private val context: Context) {
     private val screenshotDao = AppDatabase.getDatabase(context).screenshotDao()
@@ -61,39 +62,39 @@ class ScreenshotRepository(private val context: Context) {
     }
     
     // Process multiple screenshots at once
-    suspend fun processScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        
-        screenshots.forEach { screenshot ->
-            if (!isScreenshotProcessed(screenshot.uri)) {
-                try {
-                    val inputImage = InputImage.fromFilePath(context, screenshot.uri)
-                    
-                    val text = withContext(Dispatchers.IO) {
-                        suspendCancellableCoroutine<String> { continuation ->
-                            recognizer.process(inputImage)
-                                .addOnSuccessListener { visionText ->
-                                    if (continuation.isActive) {
-                                        continuation.resume(visionText.text) {}
-                                    }
-                                }
-                                .addOnFailureListener { e ->
-                                    Log.e("TextRecognition", "Error processing batch image", e)
-                                    if (continuation.isActive) {
-                                        continuation.resume("") {}
-                                    }
-                                }
-                        }
-                    }
-                    
-                    addScreenshotWithText(screenshot.uri, screenshot.name, text)
-                    Log.d("ScreenshotRepo", "Batch processed: ${screenshot.name}")
-                } catch (e: Exception) {
-                    Log.e("TextRecognition", "Error creating InputImage for ${screenshot.name}", e)
-                }
-            }
-        }
-    }
+//    suspend fun processScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
+//        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+//
+//        screenshots.forEach { screenshot ->
+//            if (!isScreenshotProcessed(screenshot.uri)) {
+//                try {
+//                    val inputImage = InputImage.fromFilePath(context, screenshot.uri)
+//
+//                    val text = withContext(Dispatchers.IO) {
+//                        suspendCancellableCoroutine<String> { continuation ->
+//                            recognizer.process(inputImage)
+//                                .addOnSuccessListener { visionText ->
+//                                    if (continuation.isActive) {
+//                                        continuation.resume(visionText.text) {}
+//                                    }
+//                                }
+//                                .addOnFailureListener { e ->
+//                                    Log.e("TextRecognition", "Error processing batch image", e)
+//                                    if (continuation.isActive) {
+//                                        continuation.resume("") {}
+//                                    }
+//                                }
+//                        }
+//                    }
+//
+//                    addScreenshotWithText(screenshot.uri, screenshot.name, text)
+//                    Log.d("ScreenshotRepo", "Batch processed: ${screenshot.name}")
+//                } catch (e: Exception) {
+//                    Log.e("TextRecognition", "Error creating InputImage for ${screenshot.name}", e)
+//                }
+//            }
+//        }
+//    }
     
     // Search for screenshots containing the query text
     suspend fun searchScreenshots(query: String): List<ScreenshotWithText> {
@@ -122,23 +123,23 @@ class ScreenshotRepository(private val context: Context) {
     }
     
     // Get count of processed screenshots from a specific list
-    suspend fun getProcessedCount(screenshots: List<ScreenshotItem>): Int {
-        var count = 0
-        for (screenshot in screenshots) {
-            if (isScreenshotProcessed(screenshot.uri)) {
-                count++
-            }
-        }
-        return count
-    }
-    
-    // Find unprocessed screenshots from a list
-    suspend fun findUnprocessedScreenshots(screenshots: List<ScreenshotItem>): List<ScreenshotItem> {
-        val processedUris = screenshotDao.getAllProcessedUris()
-        return screenshots.filter { screenshot -> 
-            !processedUris.contains(screenshot.uri.toString()) 
-        }
-    }
+//    suspend fun getProcessedCount(screenshots: List<ScreenshotItem>): Int {
+//        var count = 0
+//        for (screenshot in screenshots) {
+//            if (isScreenshotProcessed(screenshot.uri)) {
+//                count++
+//            }
+//        }
+//        return count
+//    }
+//
+//    // Find unprocessed screenshots from a list
+//    suspend fun findUnprocessedScreenshots(screenshots: List<ScreenshotItem>): List<ScreenshotItem> {
+//        val processedUris = screenshotDao.getAllProcessedUris()
+//        return screenshots.filter { screenshot ->
+//            !processedUris.contains(screenshot.uri.toString())
+//        }
+//    }
     
     // Process only unprocessed screenshots
     suspend fun processNewScreenshots(context: Context, screenshots: List<ScreenshotItem>) {
@@ -162,13 +163,13 @@ class ScreenshotRepository(private val context: Context) {
                                 .addOnSuccessListener { visionText ->
                                     if (continuation.isActive) {
                                         Log.d("ScreenshotRepo", "OCR completed for ${screenshot.name}, text length: ${visionText.text.length}")
-                                        continuation.resume(visionText.text) {}
+                                        continuation.resume(visionText.text) { cause, _, _ -> }
                                     }
                                 }
                                 .addOnFailureListener { e ->
                                     Log.e("ScreenshotRepo", "OCR failed for ${screenshot.name}", e)
                                     if (continuation.isActive) {
-                                        continuation.resume("") {}
+                                        continuation.resume("") { cause, _, _ -> }
                                     }
                                 }
                         }
@@ -194,11 +195,11 @@ class ScreenshotRepository(private val context: Context) {
         }
     }
     
-    // Get all processed URIs from the database
-    suspend fun getAllProcessedUris(): List<String> {
-        return screenshotDao.getAllProcessedUris()
-    }
-    
+//    // Get all processed URIs from the database
+//    suspend fun getAllProcessedUris(): List<String> {
+//        return screenshotDao.getAllProcessedUris()
+//    }
+//
     // Check for new screenshots using createdAt timestamp
     suspend fun checkForNewScreenshots(context: Context, limit: Int = 20, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
         Log.d("ScreenshotRepo", "Checking for new screenshots using createdAt timestamp")
@@ -231,98 +232,103 @@ class ScreenshotRepository(private val context: Context) {
     // Helper function to get screenshots newer than a specific timestamp
     private fun getScreenshotsNewerThan(context: Context, timestamp: Long, limit: Int, additionalFolders: List<Uri> = emptyList(), mostRecentProcessed: ScreenshotWithText): List<ScreenshotItem> {
         try {
-            // Start with a small batch and increase if needed
-            var batchSize = limit * 2
-            var foundMatch = false
-            var newScreenshots = mutableListOf<ScreenshotItem>()
+            val newScreenshots = mutableListOf<ScreenshotItem>()
             
-            while (!foundMatch && batchSize <= 500) { // Reasonable upper limit
-                val recentScreenshots = getLatestScreenshotsFromDevice(context, batchSize, additionalFolders)
+            // Get from default media store with timestamp filter
+            val projection = arrayOf(
+                MediaStore.Images.Media._ID,
+                MediaStore.Images.Media.DISPLAY_NAME,
+                MediaStore.Images.Media.DATE_ADDED
+            )
+            
+            // Convert timestamp from milliseconds to seconds for MediaStore comparison
+            val timestampSeconds = timestamp / 1000
+            
+            context.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                "${MediaStore.Images.Media.DISPLAY_NAME} LIKE ? AND ${MediaStore.Images.Media.DATE_ADDED} > ?",
+                arrayOf("%screenshot%", timestampSeconds.toString()),
+                "${MediaStore.Images.Media.DATE_ADDED} DESC"
+            )?.use { cursor ->
+                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
+                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
+                val dateColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
                 
-                // Find the index of the most recent processed screenshot in the device list
-                val matchIndex = recentScreenshots.indexOfFirst { it.uri == mostRecentProcessed.uri }
-                
-                if (matchIndex != -1) {
-                    // Found the match, take screenshots before this index (more recent ones)
-                    newScreenshots = recentScreenshots.take(matchIndex).toMutableList()
-                    foundMatch = true
-                    Log.d("ScreenshotRepo", "Found match at index $matchIndex, ${newScreenshots.size} new screenshots")
-                } else if (recentScreenshots.size < batchSize) {
-                    // We've reached the end of available screenshots without finding a match
-                    // This means all screenshots on device are new
-                    newScreenshots = recentScreenshots.toMutableList()
-                    foundMatch = true
-                    Log.d("ScreenshotRepo", "Reached end of screenshots, all ${newScreenshots.size} are new")
-                } else {
-                    // Double the batch size and try again
-                    batchSize *= 2
+                var count = 0
+                while (cursor.moveToNext() && count < limit) {
+                    val id = cursor.getLong(idColumn)
+                    val name = cursor.getString(nameColumn)
+                    val dateAdded = cursor.getLong(dateColumn) * 1000 // Convert to milliseconds
+                    
+                    // Double-check timestamp (though query should already filter)
+                    if (dateAdded > timestamp) {
+                        val contentUri = ContentUris.withAppendedId(
+                            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                            id
+                        )
+                        newScreenshots.add(ScreenshotItem(contentUri, name))
+                        count++
+                    }
                 }
             }
             
-            if (!foundMatch) {
-                Log.w("ScreenshotRepo", "Could not find database match in device screenshots, returning latest $limit")
-                newScreenshots = getLatestScreenshotsFromDevice(context, limit, additionalFolders).toMutableList()
+            // Get from additional folders and filter by timestamp
+            additionalFolders.forEach { folderUri ->
+                try {
+                    val folderScreenshots = getScreenshotsFromFolderNewerThan(context, folderUri, timestamp, limit - newScreenshots.size)
+                    newScreenshots.addAll(folderScreenshots)
+                    
+                    // Stop if we've reached the limit
+                    if (newScreenshots.size >= limit) return@forEach
+                } catch (e: Exception) {
+                    Log.e("ScreenshotRepo", "Error reading from additional folder: $folderUri", e)
+                }
             }
             
-            // Limit the result to the specified limit
-            if (newScreenshots.size > limit) {
-                newScreenshots = newScreenshots.take(limit).toMutableList()
-            }
+            // Sort by timestamp descending and limit results
+            val sortedScreenshots = newScreenshots.sortedByDescending { screenshot ->
+                getFileCreationTime(screenshot.uri)
+            }.take(limit)
             
-            Log.d("ScreenshotRepo", "Found ${newScreenshots.size} new screenshots")
-            return newScreenshots
+            Log.d("ScreenshotRepo", "Found ${sortedScreenshots.size} screenshots newer than timestamp $timestamp")
+            return sortedScreenshots
             
         } catch (e: Exception) {
-            Log.e("ScreenshotRepo", "Error checking for new screenshots", e)
+            Log.e("ScreenshotRepo", "Error getting screenshots newer than timestamp", e)
             return emptyList()
         }
     }
     
-    // Helper function to get the latest screenshot from device
-    private fun getLatestScreenshotFromDevice(context: Context, additionalFolders: List<Uri> = emptyList()): ScreenshotItem? {
-        val allScreenshots = mutableListOf<ScreenshotItem>()
+    // Helper function to get screenshots from a specific folder newer than timestamp
+    private fun getScreenshotsFromFolderNewerThan(context: Context, folderUri: Uri, timestamp: Long, maxCount: Int): List<ScreenshotItem> {
+        val screenshots = mutableListOf<ScreenshotItem>()
         
-        // Get from default media store
-        val projection = arrayOf(
-            MediaStore.Images.Media._ID,
-            MediaStore.Images.Media.DISPLAY_NAME,
-            MediaStore.Images.Media.DATE_ADDED
-        )
-        
-        context.contentResolver.query(
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-            projection,
-            MediaStore.Images.Media.DISPLAY_NAME + " LIKE ?",
-            arrayOf("%screenshot%"),
-            "${MediaStore.Images.Media.DATE_ADDED} DESC"
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val idColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
-                val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
-                
-                val id = cursor.getLong(idColumn)
-                val name = cursor.getString(nameColumn)
-                val contentUri = ContentUris.withAppendedId(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    id
-                )
-                
-                allScreenshots.add(ScreenshotItem(contentUri, name))
+        try {
+            val folder = DocumentFile.fromTreeUri(context, folderUri) ?: return emptyList()
+            
+            // List all files in the folder
+            val files = folder.listFiles()
+            
+            files.forEach { file ->
+                if (file.isFile && file.name?.lowercase()?.contains("screenshot") == true) {
+                    val mimeType = file.type
+                    if (mimeType != null && mimeType.startsWith("image/")) {
+                        // Check if file is newer than timestamp
+                        val fileTime = file.lastModified()
+                        if (fileTime > timestamp) {
+                            screenshots.add(ScreenshotItem(file.uri, file.name ?: "unknown"))
+                            
+                            if (screenshots.size >= maxCount) return@forEach
+                        }
+                    }
+                }
             }
+        } catch (e: Exception) {
+            Log.e("ScreenshotRepo", "Error reading folder: $folderUri", e)
         }
         
-        // Get from additional folders
-        additionalFolders.forEach { folderUri ->
-            try {
-                val folderScreenshots = getScreenshotsFromFolder(context, folderUri, 1)
-                allScreenshots.addAll(folderScreenshots)
-            } catch (e: Exception) {
-                Log.e("ScreenshotRepo", "Error reading from additional folder: $folderUri", e)
-            }
-        }
-        
-        // Return the first screenshot (most recent based on query sort order)
-        return allScreenshots.firstOrNull()
+        return screenshots
     }
     
     // Helper function to get latest screenshots from device
@@ -382,7 +388,7 @@ class ScreenshotRepository(private val context: Context) {
             // List all files in the folder
             val files = folder.listFiles()
             
-            files?.forEach { file ->
+            files.forEach { file ->
                 if (file.isFile && file.name?.lowercase()?.contains("screenshot") == true) {
                     val mimeType = file.type
                     if (mimeType != null && mimeType.startsWith("image/")) {
@@ -489,9 +495,10 @@ class ScreenshotRepository(private val context: Context) {
                     val uriString = jsonObject.getString("path")
                     val name = jsonObject.getString("name")
                     val extractedText = jsonObject.getString("text")
-                    val createdAt = if (jsonObject.has("createdAt")) jsonObject.getLong("createdAt") else getFileCreationTime(Uri.parse(uriString)) // Read createdAt if present
+                    val createdAt = if (jsonObject.has("createdAt")) jsonObject.getLong("createdAt") else getFileCreationTime(
+                        uriString.toUri()) // Read createdAt if present
                     
-                    val uri = Uri.parse(uriString)
+                    val uri = uriString.toUri()
                     
                     // Check if screenshot already exists in database
                     if (!isScreenshotProcessed(uri)) {
