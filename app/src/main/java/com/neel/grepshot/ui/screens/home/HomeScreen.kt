@@ -11,6 +11,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,7 +72,7 @@ import com.neel.grepshot.service.ScreenshotProcessingService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onScreenshotsLoaded: (List<ScreenshotItem>) -> Unit,
@@ -587,13 +588,18 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        items(dbScreenshots) { screenshot ->
+                        items(
+                            count = dbScreenshots.size,
+                            key = { index -> dbScreenshots[index].uri }
+                        ) { index ->
+                            val screenshot = dbScreenshots[index]
                             SearchResultCard(
                                 screenshot = screenshot,
                                 onClick = { 
                                     onScreenshotClick(ScreenshotItem(screenshot.uri, screenshot.name))
                                 },
-                                searchQuery = searchQuery
+                                searchQuery = searchQuery,
+                                modifier = Modifier.animateItem()
                             )
                         }
                     }
