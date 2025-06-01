@@ -218,7 +218,7 @@ class ScreenshotRepository(private val context: Context) {
             Log.d("ScreenshotRepo", "Last processed screenshot time: $lastProcessedTime")
             
             // Get screenshots from device that are newer than the last processed one
-            val newScreenshots = getScreenshotsNewerThan(context, lastProcessedTime, limit, additionalFolders, mostRecentProcessed)
+            val newScreenshots = getScreenshotsNewerThan(context, lastProcessedTime, limit, additionalFolders)
             
             Log.d("ScreenshotRepo", "Found ${newScreenshots.size} new screenshots")
             return newScreenshots
@@ -230,7 +230,7 @@ class ScreenshotRepository(private val context: Context) {
     }
     
     // Helper function to get screenshots newer than a specific timestamp
-    private fun getScreenshotsNewerThan(context: Context, timestamp: Long, limit: Int, additionalFolders: List<Uri> = emptyList(), mostRecentProcessed: ScreenshotWithText): List<ScreenshotItem> {
+    private fun getScreenshotsNewerThan(context: Context, timestamp: Long, limit: Int, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
         try {
             val newScreenshots = mutableListOf<ScreenshotItem>()
             
