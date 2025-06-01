@@ -58,6 +58,9 @@ class ScreenshotProcessingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             "START_PROCESSING" -> {
+                // Start as foreground service immediately
+                startForeground(NOTIFICATION_ID, createInitialNotification())
+                
                 // Reset the active flag and start processing
                 isProcessingActive = true
                 serviceScope.launch {
@@ -65,6 +68,8 @@ class ScreenshotProcessingService : Service() {
                         processScreenshots()
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in processing", e)
+                        updateNotification("Processing failed: ${e.message}", 0, 0, false)
+                        stopSelf()
                     }
                 }
             }
@@ -87,11 +92,16 @@ class ScreenshotProcessingService : Service() {
         return START_STICKY
     }
     
-    // Public method for the UI to stop processing
-    fun stopProcessing() {
-        // ...existing code...
+    private fun createInitialNotification(): android.app.Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Screenshot Processing")
+            .setContentText("Initializing...")
+            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
     }
-    
+
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             CHANNEL_ID,
@@ -113,13 +123,19 @@ class ScreenshotProcessingService : Service() {
             // Record start time for timing
             val startTime = System.currentTimeMillis()
             
-            // Get unprocessed screenshots
-            val unprocessedScreenshots = repository.checkForNewScreenshots(this)
+            // Get unprocessed screenshots - use applicationContext for stability
+            val unprocessedScreenshots = try {
+                repository.checkForNewScreenshots(applicationContext)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking for new screenshots", e)
+                updateNotification("Error checking screenshots: ${e.message}", 0, 0, false)
+                return
+            }
             
             if (unprocessedScreenshots.isEmpty()) {
                 Log.d(TAG, "No unprocessed screenshots found")
                 updateNotification("No new screenshots to process", 0, 0, false)
-                stopProcessing()
+                delay(2000) // Show message briefly
                 return
             }
 
@@ -139,23 +155,31 @@ class ScreenshotProcessingService : Service() {
                 Log.d(TAG, "About to call repository.processNewScreenshots with ${unprocessedScreenshots.size} screenshots")
                 
                 // Process screenshots with incremental progress updates
-                repository.processNewScreenshots(this, unprocessedScreenshots) { processed, total ->
-                    // Update processing state for each screenshot completed
-                    _processingProgress.value = ProcessingState(
-                        total = total,
-                        processed = processed,
-                        isProcessing = true
-                    )
-                    
-                    // Update notification with current progress
-                    updateNotification(
-                        "Processing screenshots... ($processed/$total)",
-                        processed,
-                        total,
-                        true
-                    )
-                    
-                    Log.d(TAG, "Progress update: $processed/$total screenshots processed")
+                repository.processNewScreenshots(applicationContext, unprocessedScreenshots) { processed, total ->
+                    try {
+                        // Check if processing is still active before updating
+                        if (isProcessingActive) {
+                            // Update processing state for each screenshot completed
+                            _processingProgress.value = ProcessingState(
+                                total = total,
+                                processed = processed,
+                                isProcessing = true
+                            )
+                            
+                            // Update notification with current progress
+                            updateNotification(
+                                "Processing screenshots... ($processed/$total)",
+                                processed,
+                                total,
+                                true
+                            )
+                            
+                            Log.d(TAG, "Progress update: $processed/$total screenshots processed")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in progress callback", e)
+                        // Don't rethrow - just log and continue
+                    }
                 }
                 
                 Log.d(TAG, "Repository.processNewScreenshots completed")
@@ -219,8 +243,12 @@ class ScreenshotProcessingService : Service() {
                 isProcessing = false
             )
         } finally {
-            // Clean up
-            stopForeground(STOP_FOREGROUND_REMOVE)
+            // Clean up - check if service is still running
+            try {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error stopping foreground", e)
+            }
             stopSelf()
         }
     }
@@ -240,16 +268,21 @@ class ScreenshotProcessingService : Service() {
     private fun updateNotification(contentText: String, processed: Int, total: Int, ongoing: Boolean, title: String = "Screenshot Processing") {
         try {
             val notificationManager = getSystemService(NotificationManager::class.java)
+            if (notificationManager == null) {
+                Log.e(TAG, "NotificationManager is null")
+                return
+            }
+            
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(contentText)
-                .setSmallIcon(R.drawable.ic_notification)
+                .setSmallIcon(android.R.drawable.ic_menu_camera) // Use system icon to avoid missing resource
                 .setOngoing(ongoing)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .apply {
                     if (total > 0) {
                         setProgress(total, processed, false)
-                    } else {
+                    } else if (ongoing) {
                         setProgress(0, 0, true)
                     }
                 }
