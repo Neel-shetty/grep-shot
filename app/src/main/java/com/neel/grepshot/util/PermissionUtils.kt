@@ -21,4 +21,19 @@ object PermissionUtils {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
     }
+    
+    fun hasNotificationPermission(context: Context): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            true // Not required for older versions
+        }
+    }
+    
+    fun getNotificationPermission(): String {
+        return Manifest.permission.POST_NOTIFICATIONS
+    }
 }

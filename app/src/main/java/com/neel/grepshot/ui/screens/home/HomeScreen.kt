@@ -69,6 +69,7 @@ import com.neel.grepshot.data.model.ScreenshotItem
 import com.neel.grepshot.data.model.ScreenshotWithText
 import com.neel.grepshot.data.repository.ScreenshotRepository
 import com.neel.grepshot.service.ScreenshotProcessingService
+import com.neel.grepshot.util.PermissionUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -163,10 +164,39 @@ fun HomeScreen(
         ) 
     }
     
+    var hasNotificationPermission by remember {
+        mutableStateOf(PermissionUtils.hasNotificationPermission(context))
+    }
+    
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasPermission = isGranted
+    }
+    
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasNotificationPermission = isGranted
+        if (isGranted) {
+            // Start processing after notification permission is granted
+            coroutineScope.launch {
+                try {
+                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                        action = "START_PROCESSING"
+                    }
+                    ContextCompat.startForegroundService(context, intent)
+                    
+                    Toast.makeText(
+                        context,
+                        "Started processing available screenshots",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } catch (e: Exception) {
+                    Log.e("HomeScreen", "Error starting service after permission grant", e)
+                }
+            }
+        }
     }
 
     // Search states
@@ -265,38 +295,26 @@ fun HomeScreen(
     }
 
     // Check for unprocessed screenshots in the background
-    LaunchedEffect(hasPermission, serviceConnected) {
-        if (hasPermission && !autoProcessingLaunched && serviceConnected) {
+    LaunchedEffect(hasPermission, serviceConnected, hasNotificationPermission) {
+        if (hasPermission && hasNotificationPermission && !autoProcessingLaunched && serviceConnected) {
             coroutineScope.launch {
                 val newScreenshots = repository.checkForNewScreenshots(context)
                 if (newScreenshots.isNotEmpty()) {
-                    // Check for notification permission before auto-starting service
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && 
-                        ContextCompat.checkSelfPermission(
-                            context, 
-                            Manifest.permission.POST_NOTIFICATIONS
-                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        Log.d("HomeScreen", "Auto-processing delayed: notification permission required")
-                        // We won't auto-start service without notification permission
-                        // This will be handled when user manually starts processing
-                    } else {
-                        // Start the background service to process new screenshots
-                        try {
-                            val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                action = "START_PROCESSING"
-                            }
-                            Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
-                            ContextCompat.startForegroundService(context, intent)
-                            
-                            Toast.makeText(
-                                context,
-                                "Found ${newScreenshots.size} new screenshots. Processing in background.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } catch (e: Exception) {
-                            Log.e("HomeScreen", "Error auto-starting service", e)
+                    // Start the background service to process new screenshots
+                    try {
+                        val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                            action = "START_PROCESSING"
                         }
+                        Log.d("HomeScreen", "Auto-starting foreground service for ${newScreenshots.size} new screenshots")
+                        ContextCompat.startForegroundService(context, intent)
+                        
+                        Toast.makeText(
+                            context,
+                            "Found ${newScreenshots.size} new screenshots. Processing in background.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    } catch (e: Exception) {
+                        Log.e("HomeScreen", "Error auto-starting service", e)
                     }
                 } else {
                     Log.d("HomeScreen", "No new screenshots found during launch check")
@@ -556,28 +574,50 @@ fun HomeScreen(
                     ) {
                         Text("No processed screenshots found in database")
                         
+                        // Show information about notification permission if needed
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                            Text(
+                                text = "Notification permission is required for background processing",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.Gray,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
+                            )
+                        }
+                        
                         // Add processing button if there are no screenshots and not loading
                         Button(
                             onClick = {
-                                try {
-                                    // Start the foreground service
-                                    val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
-                                        action = "START_PROCESSING"
+                                // Check for notification permission first
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                    // Request notification permission
+                                    notificationPermissionLauncher.launch(PermissionUtils.getNotificationPermission())
+                                } else {
+                                    // Start processing directly
+                                    try {
+                                        val intent = Intent(context, ScreenshotProcessingService::class.java).apply {
+                                            action = "START_PROCESSING"
+                                        }
+                                        ContextCompat.startForegroundService(context, intent)
+                                        
+                                        Toast.makeText(
+                                            context,
+                                            "Started processing available screenshots",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } catch (e: Exception) {
+                                        Log.e("HomeScreen", "Error starting service", e)
                                     }
-                                    ContextCompat.startForegroundService(context, intent)
-                                    
-                                    Toast.makeText(
-                                        context,
-                                        "Started processing available screenshots",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                } catch (e: Exception) {
-                                    Log.e("HomeScreen", "Error starting service", e)
                                 }
                             },
                             modifier = Modifier.padding(top = 16.dp)
                         ) {
-                            Text("Find and Process Screenshots")
+                            Text(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                    "Grant Notification Permission & Process"
+                                } else {
+                                    "Find and Process Screenshots"
+                                }
+                            )
                         }
                     }
                 } else {

@@ -155,7 +155,7 @@ class ScreenshotRepository(private val context: Context) {
     }
     
     // Check for new screenshots using createdAt timestamp
-    suspend fun checkForNewScreenshots(context: Context, limit: Int = 20, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
+    suspend fun checkForNewScreenshots(context: Context, limit: Int = 1000000, additionalFolders: List<Uri> = emptyList()): List<ScreenshotItem> {
         Log.d("ScreenshotRepo", "Checking for new screenshots using createdAt timestamp")
         
         try {
