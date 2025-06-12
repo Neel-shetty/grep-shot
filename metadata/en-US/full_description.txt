@@ -1,0 +1,7 @@
+GrepShot helps you find screenshots using the text within screenshots using OCR(Optical Character Recognition).
+
+* Process images in the background
+* search screenshots instantly
+* export and import OCR data as json
+
+It will take a few minutes to do OCR processing for all your screenshots on first launch, after that it will only process new screenshots the next time you open.

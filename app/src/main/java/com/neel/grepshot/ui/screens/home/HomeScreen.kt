@@ -367,6 +367,8 @@ fun HomeScreen(
         bottomBar = {
             // Empty bottom bar
         },
+        // Development testing FAB - commented out for production
+        /*
         floatingActionButton = {
             // Development testing FAB - only keeping this one for clearing the database
             FloatingActionButton(
@@ -393,6 +395,7 @@ fun HomeScreen(
                 )
             }
         }
+        */
     ) { paddingValues ->
         Column(
             modifier = modifier
