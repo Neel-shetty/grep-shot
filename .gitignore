@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+kls_database.db
+app/release/*

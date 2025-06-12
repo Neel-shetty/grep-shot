@@ -96,7 +96,7 @@ class ScreenshotProcessingService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screenshot Processing")
             .setContentText("Initializing...")
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_stat_name)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -276,7 +276,7 @@ class ScreenshotProcessingService : Service() {
             val notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(title)
                 .setContentText(contentText)
-                .setSmallIcon(android.R.drawable.ic_menu_camera) // Use system icon to avoid missing resource
+                .setSmallIcon(R.drawable.ic_stat_name)
                 .setOngoing(ongoing)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .apply {
